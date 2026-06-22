@@ -70,7 +70,6 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     if (!this.runState) {
-      // Try loading from EventBus (if coming from BootScene/MenuScene flow)
       EventBus.once<RunState>('run_state_ready', (rs) => {
         this.runState = rs;
         this._initScene();
@@ -99,12 +98,9 @@ export class GameScene extends Phaser.Scene {
     this._buildPlayArea();
     this._buildBottomControls();
 
-    // Deal initial hand
     this._dealCards();
-
     this._updateUI();
 
-    // Listen for game_won
     this._gameWonHandler = (_rs: RunState) => {
       this.scene.start('WinScene', { runState: this.runState });
     };
@@ -116,34 +112,64 @@ export class GameScene extends Phaser.Scene {
   // ---------------------------------------------------------------------------
 
   private _drawBackground(): void {
-    // Top HUD bar
+    // ── Near-black outer frame ───────────────────────────────────────────────
+    const outer = this.add.graphics();
+    outer.fillStyle(0x0c0c14, 1);
+    outer.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    outer.setDepth(DEPTH.bg);
+
+    // ── Green felt table band (main play area) ────────────────────────────────
+    const felt = this.add.graphics();
+    felt.fillStyle(0x35654d, 1);
+    felt.fillRect(0, 88, GAME_WIDTH, 562);   // y=88 to y=650
+    felt.setDepth(DEPTH.bg + 1);
+
+    // Subtle felt highlight in center
+    for (let s = 4; s >= 1; s--) {
+      felt.fillStyle(0x3d7a5a, 0.07 * (5 - s));
+      felt.fillEllipse(GAME_WIDTH / 2, 380, GAME_WIDTH * 0.85 * (s / 4), 400 * (s / 4));
+    }
+
+    // ── HUD bar at top ────────────────────────────────────────────────────────
     const hudBar = this.add.graphics();
-    hudBar.fillStyle(COLORS.panelDark, 0.95);
-    hudBar.fillRect(0, 0, GAME_WIDTH, 90);
+    hudBar.fillStyle(0x0a0a18, 0.97);
+    hudBar.fillRect(0, 0, GAME_WIDTH, 88);
+    hudBar.lineStyle(2, 0x2a2a44, 1);
+    hudBar.lineBetween(0, 88, GAME_WIDTH, 88);
     hudBar.setDepth(DEPTH.hud - 5);
 
-    // Side panel (left: joker area, consumable area)
+    // ── Joker/consumable row background ──────────────────────────────────────
     const sidePanel = this.add.graphics();
-    sidePanel.fillStyle(COLORS.panel, 0.4);
-    sidePanel.fillRoundedRect(0, 95, GAME_WIDTH, 205, 0);
-    sidePanel.setDepth(DEPTH.bg + 1);
+    sidePanel.fillStyle(0x1a1428, 0.55);
+    sidePanel.fillRoundedRect(0, 93, GAME_WIDTH, 64, 0);
+    sidePanel.setDepth(DEPTH.bg + 2);
 
-    // Play area zone
+    // ── Play area zone ────────────────────────────────────────────────────────
     const playZone = this.add.graphics();
-    playZone.lineStyle(1, 0x4a3060, 0.6);
-    playZone.strokeRoundedRect(140, PLAY_AREA_Y - 65, GAME_WIDTH - 280, 130, 10);
-    playZone.setDepth(DEPTH.bg + 1);
+    playZone.fillStyle(0x2a5440, 0.4);
+    playZone.fillRoundedRect(150, PLAY_AREA_Y - 62, GAME_WIDTH - 300, 124, 10);
+    playZone.lineStyle(1, 0x4a8060, 0.5);
+    playZone.strokeRoundedRect(150, PLAY_AREA_Y - 62, GAME_WIDTH - 300, 124, 10);
+    playZone.setDepth(DEPTH.bg + 2);
 
-    // Hand area zone
+    // ── Hand area zone ────────────────────────────────────────────────────────
     const handZone = this.add.graphics();
-    handZone.lineStyle(1, 0x4a3060, 0.4);
+    handZone.lineStyle(1, 0x3a6050, 0.35);
     handZone.strokeRoundedRect(80, HAND_POSITIONS_Y - 55, GAME_WIDTH - 160, 115, 10);
-    handZone.setDepth(DEPTH.bg + 1);
+    handZone.setDepth(DEPTH.bg + 2);
 
-    // "Play Area" label
-    this.add.text(GAME_WIDTH / 2, PLAY_AREA_Y - 70, 'Play Area', {
-      fontFamily: FONT, fontSize: '12px', color: '#555577',
-    }).setOrigin(0.5).setDepth(DEPTH.bg + 2);
+    // ── Play area label ───────────────────────────────────────────────────────
+    this.add.text(GAME_WIDTH / 2, PLAY_AREA_Y - 68, 'Play Area', {
+      fontFamily: FONT, fontSize: '12px', color: '#4a7060',
+    }).setOrigin(0.5).setDepth(DEPTH.bg + 3);
+
+    // ── Bottom action bar background ──────────────────────────────────────────
+    const bottomBar = this.add.graphics();
+    bottomBar.fillStyle(0x0c0c14, 0.9);
+    bottomBar.fillRect(0, 650, GAME_WIDTH, 70);
+    bottomBar.lineStyle(1, 0x2a2a44, 0.8);
+    bottomBar.lineBetween(0, 650, GAME_WIDTH, 650);
+    bottomBar.setDepth(DEPTH.bg + 2);
   }
 
   // ---------------------------------------------------------------------------
@@ -152,126 +178,144 @@ export class GameScene extends Phaser.Scene {
 
   private _buildHUD(): void {
     const rs = this.runState;
+    const d = DEPTH.hud;
 
-    // Blind name
-    this.blindNameText = this.add.text(100, 18, '', {
-      fontFamily: FONT, fontSize: '16px', color: '#cccccc',
-    }).setOrigin(0.5, 0).setDepth(DEPTH.hud);
+    // ── Left: blind name + ante ───────────────────────────────────────────────
+    this.blindNameText = this.add.text(14, 10, '', {
+      fontFamily: FONT, fontSize: '14px', color: '#aaaacc',
+    }).setOrigin(0, 0).setDepth(d);
 
-    // Score display row 1: Chips × Mult = Score / Target
-    this.add.text(390, 8, 'Chips', {
-      fontFamily: FONT, fontSize: '11px', color: '#4a90d9',
-    }).setOrigin(0.5, 0).setDepth(DEPTH.hud);
+    this.anteText = this.add.text(14, 28, `Ante ${rs.ante} / 8`, {
+      fontFamily: FONT, fontSize: '13px', color: '#666688',
+    }).setOrigin(0, 0).setDepth(d);
 
-    this.chipsText = this.add.text(390, 22, '0', {
-      fontFamily: FONT, fontSize: '32px', color: '#4a90d9',
-      stroke: '#000000', strokeThickness: 2,
-    }).setOrigin(0.5, 0).setDepth(DEPTH.hud);
+    // ── Center: Chips counter ─────────────────────────────────────────────────
+    // Chips box (blue)
+    const chipBox = this.add.graphics();
+    chipBox.fillStyle(0x1a3a5e, 0.95);
+    chipBox.fillRoundedRect(340, 6, 130, 54, 7);
+    chipBox.lineStyle(2, COLORS.chipBlue, 0.7);
+    chipBox.strokeRoundedRect(340, 6, 130, 54, 7);
+    chipBox.setDepth(d - 1);
 
-    this.add.text(510, 35, '×', {
-      fontFamily: FONT, fontSize: '26px', color: '#ffffff',
-    }).setOrigin(0.5).setDepth(DEPTH.hud);
+    this.add.text(405, 14, 'CHIPS', {
+      fontFamily: FONT, fontSize: '10px', color: '#4a90d9',
+    }).setOrigin(0.5, 0).setDepth(d);
 
-    this.add.text(620, 8, 'Mult', {
-      fontFamily: FONT, fontSize: '11px', color: '#e74c3c',
-    }).setOrigin(0.5, 0).setDepth(DEPTH.hud);
+    this.chipsText = this.add.text(405, 28, '0', {
+      fontFamily: FONT, fontSize: '30px', color: '#7ab8f5',
+      stroke: '#001020', strokeThickness: 2,
+    }).setOrigin(0.5, 0).setDepth(d);
 
-    this.multText = this.add.text(620, 22, '0', {
-      fontFamily: FONT, fontSize: '32px', color: '#e74c3c',
-      stroke: '#000000', strokeThickness: 2,
-    }).setOrigin(0.5, 0).setDepth(DEPTH.hud);
+    // × symbol
+    this.add.text(490, 33, '×', {
+      fontFamily: FONT, fontSize: '28px', color: '#aaaaaa',
+    }).setOrigin(0.5).setDepth(d);
 
-    this.add.text(730, 35, '=', {
+    // Mult box (red)
+    const multBox = this.add.graphics();
+    multBox.fillStyle(0x3e1010, 0.95);
+    multBox.fillRoundedRect(510, 6, 130, 54, 7);
+    multBox.lineStyle(2, COLORS.multRed, 0.7);
+    multBox.strokeRoundedRect(510, 6, 130, 54, 7);
+    multBox.setDepth(d - 1);
+
+    this.add.text(575, 14, 'MULT', {
+      fontFamily: FONT, fontSize: '10px', color: '#e74c3c',
+    }).setOrigin(0.5, 0).setDepth(d);
+
+    this.multText = this.add.text(575, 28, '0', {
+      fontFamily: FONT, fontSize: '30px', color: '#f08080',
+      stroke: '#200000', strokeThickness: 2,
+    }).setOrigin(0.5, 0).setDepth(d);
+
+    // = symbol
+    this.add.text(660, 33, '=', {
       fontFamily: FONT, fontSize: '22px', color: '#888888',
-    }).setOrigin(0.5).setDepth(DEPTH.hud);
+    }).setOrigin(0.5).setDepth(d);
 
-    this.add.text(830, 8, 'Score', {
-      fontFamily: FONT, fontSize: '11px', color: '#ffffff',
-    }).setOrigin(0.5, 0).setDepth(DEPTH.hud);
+    // ── Score / Target ────────────────────────────────────────────────────────
+    this.add.text(740, 12, 'SCORE', {
+      fontFamily: FONT, fontSize: '10px', color: '#aaaaaa',
+    }).setOrigin(0.5, 0).setDepth(d);
 
-    this.scoreText = this.add.text(830, 22, '0', {
+    this.scoreText = this.add.text(740, 26, '0', {
       fontFamily: FONT, fontSize: '26px', color: '#ffffff',
       stroke: '#000000', strokeThickness: 2,
-    }).setOrigin(0.5, 0).setDepth(DEPTH.hud);
+    }).setOrigin(0.5, 0).setDepth(d);
 
-    this.add.text(930, 35, '/', {
-      fontFamily: FONT, fontSize: '20px', color: '#888888',
-    }).setOrigin(0.5).setDepth(DEPTH.hud);
+    this.add.text(830, 33, '/', {
+      fontFamily: FONT, fontSize: '18px', color: '#666666',
+    }).setOrigin(0.5).setDepth(d);
 
-    this.add.text(1040, 8, 'Target', {
-      fontFamily: FONT, fontSize: '11px', color: '#aaaaaa',
-    }).setOrigin(0.5, 0).setDepth(DEPTH.hud);
+    this.add.text(920, 12, 'TARGET', {
+      fontFamily: FONT, fontSize: '10px', color: '#888888',
+    }).setOrigin(0.5, 0).setDepth(d);
 
-    this.targetText = this.add.text(1040, 22, numStr(rs.chipTarget), {
-      fontFamily: FONT, fontSize: '22px', color: '#aaaaaa',
-    }).setOrigin(0.5, 0).setDepth(DEPTH.hud);
+    this.targetText = this.add.text(920, 26, numStr(rs.chipTarget), {
+      fontFamily: FONT, fontSize: '22px', color: '#888888',
+    }).setOrigin(0.5, 0).setDepth(d);
 
-    // Progress bar
+    // ── Progress bar ──────────────────────────────────────────────────────────
     this.progressBar = this.add.graphics();
-    this.progressBar.setDepth(DEPTH.hud);
+    this.progressBar.setDepth(d);
     this.progressFill = this.add.graphics();
-    this.progressFill.setDepth(DEPTH.hud + 1);
+    this.progressFill.setDepth(d + 1);
     this._drawProgressBar();
 
-    // Second row: Hands / Discards / Money / Ante
-    const row2Y = 62;
+    // ── Right: Stats row (Hands / Discards / Money) ───────────────────────────
+    // Hands pill
+    const statsBg = this.add.graphics();
+    statsBg.setDepth(d - 1);
+    statsBg.fillStyle(0x0a0a1e, 0.85);
+    statsBg.fillRoundedRect(1020, 8, 250, 72, 7);
+    statsBg.lineStyle(1, 0x2a2a44, 0.7);
+    statsBg.strokeRoundedRect(1020, 8, 250, 72, 7);
 
-    this.add.text(390, row2Y, 'Hands', {
-      fontFamily: FONT, fontSize: '11px', color: '#aaaaaa',
-    }).setOrigin(0.5, 0).setDepth(DEPTH.hud);
+    this.add.text(1048, 14, 'Hands', { fontFamily: FONT, fontSize: '10px', color: '#888888' }).setDepth(d);
+    this.handsText = this.add.text(1048, 28, String(rs.handsRemaining), {
+      fontFamily: FONT, fontSize: '22px', color: '#ffffff',
+    }).setDepth(d);
 
-    this.handsText = this.add.text(390, row2Y + 14, String(rs.handsRemaining), {
-      fontFamily: FONT, fontSize: '18px', color: '#ffffff',
-    }).setOrigin(0.5, 0).setDepth(DEPTH.hud);
+    this.add.text(1120, 14, 'Discards', { fontFamily: FONT, fontSize: '10px', color: '#888888' }).setDepth(d);
+    this.discardsText = this.add.text(1120, 28, String(rs.discardsRemaining), {
+      fontFamily: FONT, fontSize: '22px', color: '#ff8844',
+    }).setDepth(d);
 
-    this.add.text(510, row2Y, 'Discards', {
-      fontFamily: FONT, fontSize: '11px', color: '#aaaaaa',
-    }).setOrigin(0.5, 0).setDepth(DEPTH.hud);
+    this.add.text(1202, 14, 'Money', { fontFamily: FONT, fontSize: '10px', color: '#888888' }).setDepth(d);
+    this.moneyText = this.add.text(1202, 28, `$${rs.money}`, {
+      fontFamily: FONT, fontSize: '20px', color: COLORS.goldHex,
+    }).setDepth(d);
 
-    this.discardsText = this.add.text(510, row2Y + 14, String(rs.discardsRemaining), {
-      fontFamily: FONT, fontSize: '18px', color: '#ff8844',
-    }).setOrigin(0.5, 0).setDepth(DEPTH.hud);
-
-    this.add.text(640, row2Y, 'Money', {
-      fontFamily: FONT, fontSize: '11px', color: '#aaaaaa',
-    }).setOrigin(0.5, 0).setDepth(DEPTH.hud);
-
-    this.moneyText = this.add.text(640, row2Y + 14, `$${rs.money}`, {
-      fontFamily: FONT, fontSize: '18px', color: COLORS.goldHex,
-    }).setOrigin(0.5, 0).setDepth(DEPTH.hud);
-
-    this.add.text(790, row2Y, 'Ante', {
-      fontFamily: FONT, fontSize: '11px', color: '#aaaaaa',
-    }).setOrigin(0.5, 0).setDepth(DEPTH.hud);
-
-    this.anteText = this.add.text(790, row2Y + 14, `${rs.ante} / 8`, {
-      fontFamily: FONT, fontSize: '18px', color: '#cccccc',
-    }).setOrigin(0.5, 0).setDepth(DEPTH.hud);
-
-    // Hand type label (center of play area)
-    this.handTypeText = this.add.text(GAME_WIDTH / 2, PLAY_AREA_Y + 70, '', {
-      fontFamily: FONT, fontSize: '16px', color: COLORS.goldHex,
-      stroke: '#000000', strokeThickness: 2,
+    // ── Hand type label ───────────────────────────────────────────────────────
+    this.handTypeText = this.add.text(GAME_WIDTH / 2, PLAY_AREA_Y + 75, '', {
+      fontFamily: FONT, fontSize: '17px', color: COLORS.goldHex,
+      stroke: '#000000', strokeThickness: 3,
     }).setOrigin(0.5).setDepth(DEPTH.ui);
   }
 
   private _drawProgressBar(): void {
     const rs = this.runState;
-    const barX = 1140;
-    const barY = 18;
-    const barW = 120;
-    const barH = 14;
+    const barX = 1028;
+    const barY = 62;
+    const barW = 240;
+    const barH = 12;
 
     this.progressBar.clear();
-    this.progressBar.fillStyle(0x222222, 1);
+    this.progressBar.fillStyle(0x111122, 1);
     this.progressBar.fillRoundedRect(barX, barY, barW, barH, 4);
-    this.progressBar.lineStyle(1, 0x555555, 1);
+    this.progressBar.lineStyle(1, 0x333355, 1);
     this.progressBar.strokeRoundedRect(barX, barY, barW, barH, 4);
 
     this.progressFill.clear();
     const progress = Math.min(1, rs.chipsScored / rs.chipTarget);
     if (progress > 0) {
-      this.progressFill.fillStyle(progress >= 1 ? COLORS.green : COLORS.chipBlue, 1);
+      // Blue → red as we approach target
+      const r = Math.floor(0x4a + (0xe7 - 0x4a) * progress);
+      const g = Math.floor(0x90 + (0x4c - 0x90) * progress);
+      const b = Math.floor(0xd9 + (0x3c - 0xd9) * progress);
+      const barColor = (r << 16) | (g << 8) | b;
+      this.progressFill.fillStyle(progress >= 1 ? (COLORS.green as number) : barColor, 1);
       this.progressFill.fillRoundedRect(barX, barY, barW * progress, barH, 4);
     }
   }
@@ -283,11 +327,9 @@ export class GameScene extends Phaser.Scene {
   private _buildJokerRow(): void {
     const rs = this.runState;
 
-    // Clear existing
     this.jokerViews.forEach(jv => jv.destroy());
     this.jokerViews = [];
 
-    // Slots background
     const slotsG = this.add.graphics();
     for (let i = 0; i < rs.maxJokerSlots; i++) {
       const sx = 60 + i * 82;
@@ -304,9 +346,8 @@ export class GameScene extends Phaser.Scene {
       this.jokerViews.push(jv);
     });
 
-    // Joker count label
     this.add.text(60 + rs.maxJokerSlots * 82 + 10, JOKER_ROW_Y, `${rs.jokers.length}/${rs.maxJokerSlots}`, {
-      fontFamily: FONT, fontSize: '12px', color: '#888888',
+      fontFamily: FONT, fontSize: '12px', color: '#666688',
     }).setOrigin(0, 0.5).setDepth(DEPTH.ui);
   }
 
@@ -323,7 +364,6 @@ export class GameScene extends Phaser.Scene {
     const startX = GAME_WIDTH - 90 - (rs.maxConsumableSlots - 1) * 80;
     const cY = JOKER_ROW_Y;
 
-    // Slot backgrounds
     const slotsG = this.add.graphics();
     for (let i = 0; i < rs.maxConsumableSlots; i++) {
       const cx = startX + i * 80;
@@ -364,7 +404,6 @@ export class GameScene extends Phaser.Scene {
     container.setSize(CARD_W, CARD_H);
     container.setInteractive({ useHandCursor: true });
 
-    // Right-click to use consumable
     container.on('pointerup', (_ptr: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
       void _ptr; void _lx; void _ly;
       if (!event.stopPropagation) return;
@@ -379,7 +418,6 @@ export class GameScene extends Phaser.Scene {
     const selected = this.handViews.filter(cv => cv.isSelected).map(cv => cv.cardData);
 
     if (cons.type === 'planet') {
-      // Planet: apply to hand levels
       import('../data/PlanetDefs.ts').then(({ PLANET_DEFS }) => {
         const def = PLANET_DEFS.find(p => p.id === cons.defId);
         if (!def) return;
@@ -440,10 +478,9 @@ export class GameScene extends Phaser.Scene {
   // ---------------------------------------------------------------------------
 
   private _buildPlayArea(): void {
-    // "Play a hand" prompt
     this.add.text(GAME_WIDTH / 2, PLAY_AREA_Y, 'Select cards to play', {
-      fontFamily: FONT, fontSize: '14px', color: '#3a2a50',
-    }).setOrigin(0.5).setDepth(DEPTH.bg + 2);
+      fontFamily: FONT, fontSize: '14px', color: '#2a5040',
+    }).setOrigin(0.5).setDepth(DEPTH.bg + 3);
   }
 
   // ---------------------------------------------------------------------------
@@ -453,43 +490,66 @@ export class GameScene extends Phaser.Scene {
   private _buildBottomControls(): void {
     const rs = this.runState;
 
-    this.playBtn = new Button(this, 420, 668, 200, 52, 'Play Hand', () => {
+    // ── Play Hand button (large, green) ───────────────────────────────────────
+    this.playBtn = new Button(this, 380, 667, 220, 54, '▶  Play Hand', () => {
       void this.playHand();
-    }, { color: COLORS.green, fontSize: 18 });
+    }, { color: COLORS.green, fontSize: 19 });
     this.playBtn.setDepth(DEPTH.ui);
 
-    this.discardBtn = new Button(this, 640, 668, 180, 52, 'Discard', () => {
+    // ── Discard button (brownish-orange) ──────────────────────────────────────
+    this.discardBtn = new Button(this, 620, 667, 200, 54, '✕  Discard', () => {
       void this.discard();
-    }, { color: 0x8b4513, fontSize: 18 });
+    }, { color: 0x7a3a08, fontSize: 19 });
     this.discardBtn.setDepth(DEPTH.ui);
 
-    // Deck / discard info
-    this.deckCountText = this.add.text(GAME_WIDTH - 60, 640, `Deck\n${rs.deck.length}`, {
-      fontFamily: FONT, fontSize: '13px', color: '#aaaaaa', align: 'center',
-    }).setOrigin(0.5).setDepth(DEPTH.ui);
+    // ── Deck / discard pile indicators (bottom-right) ─────────────────────────
+    const deckBg = this.add.graphics();
+    deckBg.setDepth(DEPTH.ui - 1);
+    deckBg.fillStyle(0x0a0a18, 0.8);
+    deckBg.fillRoundedRect(GAME_WIDTH - 130, 654, 118, 56, 8);
+    deckBg.lineStyle(1, 0x2a2a44, 0.6);
+    deckBg.strokeRoundedRect(GAME_WIDTH - 130, 654, 118, 56, 8);
 
-    this.discardCountText = this.add.text(GAME_WIDTH - 60, 688, `Disc\n${rs.discardPile.length}`, {
-      fontFamily: FONT, fontSize: '13px', color: '#888888', align: 'center',
-    }).setOrigin(0.5).setDepth(DEPTH.ui);
+    // Mini card stack icon (deck)
+    const stackGfx = this.add.graphics();
+    stackGfx.setDepth(DEPTH.ui);
+    stackGfx.fillStyle(0x1a3a6b, 0.9);
+    stackGfx.fillRoundedRect(GAME_WIDTH - 122, 660, 28, 38, 3);
+    stackGfx.fillStyle(0x1a3a6b, 0.7);
+    stackGfx.fillRoundedRect(GAME_WIDTH - 119, 657, 28, 38, 3);
+    stackGfx.fillStyle(0x1e4aaa, 0.9);
+    stackGfx.fillRoundedRect(GAME_WIDTH - 116, 654, 28, 38, 3);
+    stackGfx.lineStyle(1, 0x4a7aee, 0.6);
+    stackGfx.strokeRoundedRect(GAME_WIDTH - 116, 654, 28, 38, 3);
 
-    // Sort buttons
-    const sortByRankBtn = this.add.text(860, 668, 'Sort Rank', {
+    this.deckCountText = this.add.text(GAME_WIDTH - 80, 662, `Deck\n${rs.deck.length}`, {
+      fontFamily: FONT, fontSize: '12px', color: '#aaaacc', align: 'left',
+    }).setOrigin(0, 0).setDepth(DEPTH.ui);
+
+    this.discardCountText = this.add.text(GAME_WIDTH - 80, 690, `Disc: ${rs.discardPile.length}`, {
+      fontFamily: FONT, fontSize: '12px', color: '#888888',
+    }).setOrigin(0, 0).setDepth(DEPTH.ui);
+
+    // ── Sort buttons ──────────────────────────────────────────────────────────
+    const sortRank = this.add.text(840, 667, 'Sort Rank', {
       fontFamily: FONT, fontSize: '13px', color: '#aaaaaa',
-      backgroundColor: '#2d1e3e', padding: { x: 8, y: 6 },
+      backgroundColor: '#1a1428',
+      padding: { x: 10, y: 7 },
     }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(DEPTH.ui);
 
-    sortByRankBtn.on('pointerdown', () => this._sortHandByRank());
-    sortByRankBtn.on('pointerover', () => sortByRankBtn.setColor(COLORS.goldHex));
-    sortByRankBtn.on('pointerout', () => sortByRankBtn.setColor('#aaaaaa'));
+    sortRank.on('pointerdown', () => this._sortHandByRank());
+    sortRank.on('pointerover', () => sortRank.setColor(COLORS.goldHex));
+    sortRank.on('pointerout', () => sortRank.setColor('#aaaaaa'));
 
-    const sortBySuitBtn = this.add.text(980, 668, 'Sort Suit', {
+    const sortSuit = this.add.text(960, 667, 'Sort Suit', {
       fontFamily: FONT, fontSize: '13px', color: '#aaaaaa',
-      backgroundColor: '#2d1e3e', padding: { x: 8, y: 6 },
+      backgroundColor: '#1a1428',
+      padding: { x: 10, y: 7 },
     }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(DEPTH.ui);
 
-    sortBySuitBtn.on('pointerdown', () => this._sortHandBySuit());
-    sortBySuitBtn.on('pointerover', () => sortBySuitBtn.setColor(COLORS.goldHex));
-    sortBySuitBtn.on('pointerout', () => sortBySuitBtn.setColor('#aaaaaa'));
+    sortSuit.on('pointerdown', () => this._sortHandBySuit());
+    sortSuit.on('pointerover', () => sortSuit.setColor(COLORS.goldHex));
+    sortSuit.on('pointerout', () => sortSuit.setColor('#aaaaaa'));
   }
 
   // ---------------------------------------------------------------------------
@@ -505,17 +565,13 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (rs.deck.length === 0 && rs.discardPile.length > 0) {
-      // Reshuffle discard into deck
       rs.deck = [...rs.discardPile].sort(() => Math.random() - 0.5);
       rs.discardPile = [];
     }
 
-    // Boss blind card draw modification is handled per-card below (e.g., The Wheel)
-
     const { drawn, remaining } = drawCards(rs.deck, needed);
     rs.deck = remaining;
 
-    // Apply The Wheel: face down randomly
     for (const card of drawn) {
       if (rs.activeBlindId === 'boss_wheel' && Math.random() < 1 / 7) {
         card.faceUp = false;
@@ -535,7 +591,6 @@ export class GameScene extends Phaser.Scene {
   private _layoutHandViews(): void {
     const rs = this.runState;
 
-    // Destroy old views
     this.handViews.forEach(cv => cv.destroy());
     this.handViews = [];
 
@@ -550,7 +605,6 @@ export class GameScene extends Phaser.Scene {
       const targetX = startX + i * 85;
       const targetY = HAND_POSITIONS_Y;
 
-      // Start from deck position (off-screen top-right) for deal animation
       const cv = new CardView(this, GAME_WIDTH - 60, 640, card, this.textureCache);
       cv.setFaceUp(card.faceUp);
       cv.setAlpha(0);
@@ -569,7 +623,6 @@ export class GameScene extends Phaser.Scene {
       cv.on('pointerdown', () => this._onCardClick(cv));
     });
 
-    // Update hand type preview after dealing
     this.time.delayedCall(ANIM.dealDuration + cards.length * ANIM.dealStagger + 50, () => {
       this._updateHandTypePreview();
     });
@@ -625,10 +678,8 @@ export class GameScene extends Phaser.Scene {
 
     const selectedCards = selected.map(cv => cv.cardData);
 
-    // Animate selected cards flying to play area
     await this._animateCardsToPlayArea(selected);
 
-    // Run scoring engine
     const rng = getRNG(rs);
     let result;
     try {
@@ -643,39 +694,30 @@ export class GameScene extends Phaser.Scene {
 
     rs.rngState = rng.getState();
 
-    // Show hand type
     this.handTypeText.setText(result.handType);
     ScorePopup.spawn(this, GAME_WIDTH / 2, PLAY_AREA_Y - 80, result.handType, COLORS.goldHex);
 
-    // Animate scoring steps
     this.currentChips = 0;
     this.currentMult = 0;
     this._updateCounterDisplays(0, 0);
 
     await this._animateScoringSteps(result.steps, selectedCards);
 
-    // Final score popup
     const finalScore = result.finalScore;
     ScorePopup.spawn(this, GAME_WIDTH / 2, PLAY_AREA_Y - 30, `${numStr(finalScore)}`, '#ffffff');
 
-    // Update runState
     rs.chipsScored += finalScore;
     rs.handsRemaining -= 1;
     this.handsPlayedThisRound += 1;
     rs.handsThisRun += 1;
     rs.bossBlindHandsPlayed += 1;
 
-    // Update hand play counts
     rs.handPlayCounts[result.handType] = (rs.handPlayCounts[result.handType] ?? 0) + 1;
     rs.mostPlayedHand = result.handType;
 
-    // Boss blind hand-played effect
     onHandPlayedForBlind(rs, selectedCards);
-
-    // Apply deferred effects
     applyDeferredEffects(rs);
 
-    // Handle destroyed cards
     if (result.destroyedCardIds.length > 0) {
       for (const cardId of result.destroyedCardIds) {
         const deckIdx = rs.deck.findIndex(c => c.id === cardId);
@@ -687,7 +729,6 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Handle created consumables
     if (result.createdConsumables && result.createdConsumables.length > 0) {
       for (const defId of result.createdConsumables) {
         if (rs.consumables.length < rs.maxConsumableSlots) {
@@ -697,7 +738,6 @@ export class GameScene extends Phaser.Scene {
       this._rebuildConsumableRow();
     }
 
-    // The Hook boss: discard 2 random cards after hand
     if (rs.activeBlindId === 'boss_hook' && selectedCards.length > 0) {
       const hookCards = [...rs.hand].sort(() => Math.random() - 0.5).slice(0, 2);
       for (const hc of hookCards) {
@@ -709,7 +749,6 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Move played cards to discard
     for (const card of selectedCards) {
       const idx = rs.hand.findIndex(c => c.id === card.id);
       if (idx !== -1) {
@@ -721,23 +760,19 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Animate play area cards off
     await this._clearPlayArea();
 
-    // Check win condition
     const won = rs.chipsScored >= rs.chipTarget;
     if (won) {
       await this._onBlindWon();
       return;
     }
 
-    // Check loss condition
     if (rs.handsRemaining <= 0) {
       await this._onGameOver();
       return;
     }
 
-    // Draw new cards
     this._dealCards();
     this._updateUI();
     saveRun(rs);
@@ -812,7 +847,6 @@ export class GameScene extends Phaser.Scene {
         mult = step.multAfter;
       }
 
-      // Process hints
       for (const hint of step.hints) {
         if (hint.type === 'card_glow') {
           const cv = this.playAreaViews.find(v => v.cardData.id === hint.cardId);
@@ -897,12 +931,10 @@ export class GameScene extends Phaser.Scene {
     this.playBtn.setEnabled(false);
     this.discardBtn.setEnabled(false);
 
-    // Notify jokers of discard
     for (const j of rs.jokers) {
       j.onDiscard?.(rs, selected.map(cv => cv.cardData));
     }
 
-    // Animate off-screen
     await new Promise<void>((resolve) => {
       let done = 0;
       for (const cv of selected) {
@@ -920,7 +952,6 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // Remove from hand, add to discard pile
     for (const cv of selected) {
       const idx = rs.hand.findIndex(c => c.id === cv.cardData.id);
       if (idx !== -1) {
@@ -984,17 +1015,13 @@ export class GameScene extends Phaser.Scene {
   private async _onBlindWon(): Promise<void> {
     const rs = this.runState;
 
-    // Deactivate boss blind
     deactivateBlind(rs);
 
-    // Calculate end-of-round money
     const earned = calcRoundEndMoney(rs, this.handsPlayedThisRound, this.discardsUsedThisRound);
     rs.money += earned;
 
-    // Deferred effects
     applyDeferredEffects(rs);
 
-    // Joker end-of-round effects
     for (const j of rs.jokers) {
       j.onRoundEnd?.(rs);
     }
@@ -1002,7 +1029,6 @@ export class GameScene extends Phaser.Scene {
     ScorePopup.spawn(this, GAME_WIDTH / 2, PLAY_AREA_Y, `Round Won! +$${earned}`, '#44cc66');
     await this._delay(1200);
 
-    // Return cards to deck: move hand + playedThisRound to discard, then shuffle into deck
     for (const card of rs.hand) rs.discardPile.push(card);
     rs.hand = [];
     rs.deck = [...rs.deck, ...rs.discardPile].sort(() => Math.random() - 0.5);
@@ -1015,7 +1041,6 @@ export class GameScene extends Phaser.Scene {
 
     saveRun(rs);
 
-    // Check if game won (8 antes)
     if (rs.ante > 8) {
       this.scene.start('WinScene', { runState: rs });
       return;
@@ -1037,9 +1062,9 @@ export class GameScene extends Phaser.Scene {
   _updateUI(): void {
     const rs = this.runState;
 
-    // Blind name
     const blindName = getBlindName(rs.ante, rs.blindIndex, rs.activeBlindId);
     this.blindNameText.setText(blindName);
+    this.anteText.setText(`Ante ${rs.ante} / 8`);
 
     this.chipsText.setText('0');
     this.multText.setText('0');
@@ -1048,9 +1073,8 @@ export class GameScene extends Phaser.Scene {
     this.handsText.setText(String(rs.handsRemaining));
     this.discardsText.setText(String(rs.discardsRemaining));
     this.moneyText.setText(`$${rs.money}`);
-    this.anteText.setText(`${rs.ante} / 8`);
     this.deckCountText.setText(`Deck\n${rs.deck.length}`);
-    this.discardCountText.setText(`Disc\n${rs.discardPile.length}`);
+    this.discardCountText.setText(`Disc: ${rs.discardPile.length}`);
 
     this.discardBtn.setEnabled(rs.discardsRemaining > 0);
 

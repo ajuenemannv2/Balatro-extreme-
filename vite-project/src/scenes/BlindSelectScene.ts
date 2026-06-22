@@ -21,7 +21,6 @@ export class BlindSelectScene extends Phaser.Scene {
   }
 
   create(): void {
-    // If no runState from init data, try getting it from EventBus
     if (!this.runState) {
       EventBus.once<RunState>('run_state_ready', (rs) => {
         this.runState = rs;
@@ -34,38 +33,77 @@ export class BlindSelectScene extends Phaser.Scene {
 
   private _build(): void {
     const rs = this.runState;
-    this.cameras.main.setBackgroundColor(COLORS.bgHex);
 
-    // Header
-    const headerPanel = this.add.graphics();
-    headerPanel.fillStyle(COLORS.panel, 0.8);
-    headerPanel.fillRoundedRect(0, 0, GAME_WIDTH, 72, 0);
+    // ── Felt green table background ───────────────────────────────────────────
+    const bgGfx = this.add.graphics();
+    bgGfx.fillStyle(0x0d1a0d, 1);
+    bgGfx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
-    this.add.text(GAME_WIDTH / 2, 36, `Ante ${rs.ante} / 8`, {
+    // Felt texture – large green band in the center
+    bgGfx.fillStyle(0x1b4a1b, 1);
+    bgGfx.fillRect(0, 78, GAME_WIDTH, GAME_HEIGHT - 78);
+
+    // Subtle radial felt highlight
+    for (let s = 5; s >= 1; s--) {
+      bgGfx.fillStyle(0x226622, 0.07 * (6 - s));
+      bgGfx.fillEllipse(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 40, GAME_WIDTH * 0.9 * (s / 5), GAME_HEIGHT * 0.8 * (s / 5));
+    }
+
+    // ── Header bar ────────────────────────────────────────────────────────────
+    const headerGfx = this.add.graphics();
+    headerGfx.fillStyle(0x0a0a18, 0.96);
+    headerGfx.fillRect(0, 0, GAME_WIDTH, 78);
+    headerGfx.lineStyle(2, 0x2a1a40, 1);
+    headerGfx.lineBetween(0, 78, GAME_WIDTH, 78);
+    headerGfx.setDepth(10);
+
+    // Ante display
+    this.add.text(GAME_WIDTH / 2, 39, `ANTE  ${rs.ante} / 8`, {
       fontFamily: FONT,
-      fontSize: '24px',
-      color: '#aaaaaa',
-    }).setOrigin(0.5);
+      fontSize: '22px',
+      color: '#aaaacc',
+      stroke: '#000000',
+      strokeThickness: 2,
+    }).setOrigin(0.5).setDepth(11);
 
-    this.add.text(GAME_WIDTH - 30, 36, `$${rs.money}`, {
+    // Money (top-right)
+    const moneyBg = this.add.graphics();
+    moneyBg.fillStyle(0x1a1200, 0.85);
+    moneyBg.fillRoundedRect(GAME_WIDTH - 130, 14, 118, 48, 8);
+    moneyBg.lineStyle(1, COLORS.gold, 0.5);
+    moneyBg.strokeRoundedRect(GAME_WIDTH - 130, 14, 118, 48, 8);
+    moneyBg.setDepth(11);
+
+    this.add.text(GAME_WIDTH - 72, 38, `$${rs.money}`, {
       fontFamily: FONT,
-      fontSize: '28px',
+      fontSize: '26px',
       color: COLORS.goldHex,
-    }).setOrigin(1, 0.5);
+    }).setOrigin(0.5).setDepth(12);
 
-    this.add.text(30, 36, `Hands: ${rs.handsRemaining}  Discards: ${rs.discardsRemaining}`, {
+    // Hands / Discards (top-left)
+    const statsBg = this.add.graphics();
+    statsBg.fillStyle(0x0a0a18, 0.6);
+    statsBg.fillRoundedRect(14, 14, 220, 48, 8);
+    statsBg.setDepth(11);
+
+    this.add.text(24, 24, `Hands`, { fontFamily: FONT, fontSize: '11px', color: '#888888' }).setDepth(12);
+    this.add.text(24, 38, String(rs.handsRemaining), { fontFamily: FONT, fontSize: '20px', color: '#ffffff' }).setDepth(12);
+    this.add.text(100, 24, `Discards`, { fontFamily: FONT, fontSize: '11px', color: '#888888' }).setDepth(12);
+    this.add.text(100, 38, String(rs.discardsRemaining), { fontFamily: FONT, fontSize: '20px', color: '#ff8844' }).setDepth(12);
+
+    // ── Choose your blind label ────────────────────────────────────────────────
+    this.add.text(GAME_WIDTH / 2, 96, 'CHOOSE YOUR BLIND', {
       fontFamily: FONT,
       fontSize: '16px',
-      color: '#aaaaaa',
-    }).setOrigin(0, 0.5);
+      color: '#88aa88',
+    }).setOrigin(0.5).setDepth(11);
 
-    // Blind cards
+    // ── Blind cards ───────────────────────────────────────────────────────────
     const cardW = 310;
-    const cardH = 340;
-    const startX = GAME_WIDTH / 2 - cardW - 20;
-    const cardY = 110;
+    const cardH = 360;
+    const startX = GAME_WIDTH / 2 - cardW - 22;
+    const cardY = 116;
 
-    const blindNames = ['Small Blind', 'Big Blind', 'Boss Blind'];
     const chipTargets = [
       getChipTarget(rs.ante, 0),
       getChipTarget(rs.ante, 1),
@@ -73,145 +111,254 @@ export class BlindSelectScene extends Phaser.Scene {
     ];
     const moneyRewards = [3, 4, 5];
 
+    // Panel colors per blind type
+    const panelFills   = [0x0d1a30, 0x180d30, 0x300d0d];
+    const accentColors = [COLORS.chipBlue as number, COLORS.btnPurple as number, 0xcc2222];
+    const chipColors   = [COLORS.chipBlue as number, 0x9b59b6, 0xff4444];
+    const blindLabels  = ['Small Blind', 'Big Blind', 'Boss Blind'];
+
     for (let i = 0; i < 3; i++) {
-      const x = startX + i * (cardW + 20);
+      const x = startX + i * (cardW + 22);
       const isCurrent = i === rs.blindIndex;
       const isPast = i < rs.blindIndex;
       const isBoss = i === 2;
 
-      // Panel
-      const panel = this.add.graphics();
-      const panelColorNum: number = isCurrent
-        ? (COLORS.btnPurple as number)
-        : isPast
-          ? 0x222222
-          : (COLORS.panelDark as number);
-      panel.fillStyle(panelColorNum, 1);
-      panel.fillRoundedRect(x, cardY, cardW, cardH, 10);
-
-      // Border
-      const borderColorNum: number = isCurrent
-        ? (COLORS.gold as number)
-        : isBoss
-          ? 0xff4444
-          : 0x444444;
-      panel.lineStyle(2, borderColorNum, 0.9);
-      panel.strokeRoundedRect(x, cardY, cardW, cardH, 10);
-
       const cx = x + cardW / 2;
 
-      // Blind display name
-      let displayName = blindNames[i];
-      if (isBoss) {
-        displayName = getBlindName(rs.ante, 2, rs.activeBlindId);
+      // ── Card background ──
+      const cardGfx = this.add.graphics();
+      cardGfx.setDepth(20);
+
+      // Shadow
+      cardGfx.fillStyle(0x000000, 0.4);
+      cardGfx.fillRoundedRect(x + 4, cardY + 4, cardW, cardH, 12);
+
+      // Main fill
+      const fillColor = isPast ? 0x111111 : panelFills[i];
+      const fillAlpha = isPast ? 0.6 : 0.9;
+      cardGfx.fillStyle(fillColor, fillAlpha);
+      cardGfx.fillRoundedRect(x, cardY, cardW, cardH, 12);
+
+      // Border
+      const borderColor = isCurrent ? accentColors[i] : (isPast ? 0x333333 : 0x2a2a44);
+      const borderAlpha = isCurrent ? 1.0 : 0.6;
+      const borderThick = isCurrent ? 3 : 1;
+      cardGfx.lineStyle(borderThick, borderColor, borderAlpha);
+      cardGfx.strokeRoundedRect(x, cardY, cardW, cardH, 12);
+
+      // Animated glow border for current blind
+      if (isCurrent) {
+        const glowGfx = this.add.graphics();
+        glowGfx.setDepth(19);
+        glowGfx.lineStyle(12, accentColors[i], 0.18);
+        glowGfx.strokeRoundedRect(x - 4, cardY - 4, cardW + 8, cardH + 8, 14);
+
+        this.tweens.add({
+          targets: glowGfx,
+          alpha: 0.3,
+          duration: 900,
+          yoyo: true,
+          repeat: -1,
+          ease: 'Sine.InOut',
+        });
       }
 
-      this.add.text(cx, cardY + 28, displayName, {
+      // Coloured top strip
+      if (!isPast) {
+        cardGfx.fillStyle(accentColors[i], 0.25);
+        cardGfx.fillRoundedRect(x, cardY, cardW, 48, { tl: 12, tr: 12, bl: 0, br: 0 });
+      }
+
+      // ── Blind name ──
+      let displayName = blindLabels[i];
+      if (isBoss) displayName = getBlindName(rs.ante, 2, rs.activeBlindId);
+
+      this.add.text(cx, cardY + 24, displayName, {
         fontFamily: FONT,
         fontSize: '20px',
-        color: isBoss ? '#ff6666' : '#ffffff',
-      }).setOrigin(0.5);
+        color: isPast ? '#555555' : (isBoss ? '#ff7777' : '#ffffff'),
+        stroke: '#000000',
+        strokeThickness: 2,
+      }).setOrigin(0.5).setDepth(21);
 
-      // Chip icon
-      const chipIcon = this.add.graphics();
-      chipIcon.fillStyle(COLORS.chipBlue, 1);
-      chipIcon.fillCircle(cx, cardY + 80, 28);
-      chipIcon.lineStyle(2, 0x2266aa, 1);
-      chipIcon.strokeCircle(cx, cardY + 80, 28);
-
-      this.add.text(cx, cardY + 80, numStr(chipTargets[i]), {
-        fontFamily: FONT,
-        fontSize: '14px',
-        color: '#ffffff',
-      }).setOrigin(0.5);
-
-      this.add.text(cx, cardY + 115, 'chips required', {
-        fontFamily: FONT,
-        fontSize: '12px',
-        color: '#aaaaaa',
-      }).setOrigin(0.5);
-
-      // Money reward
-      this.add.text(cx, cardY + 145, `+$${moneyRewards[i]} reward`, {
-        fontFamily: FONT,
-        fontSize: '15px',
-        color: COLORS.goldHex,
-      }).setOrigin(0.5);
-
-      // Boss description
-      if (isBoss) {
-        const desc = getBlindDescription(2, rs.activeBlindId);
-        if (desc) {
-          this.add.text(cx, cardY + 175, desc, {
-            fontFamily: FONT,
-            fontSize: '11px',
-            color: '#ff8888',
-            wordWrap: { width: cardW - 20 },
-            align: 'center',
-          }).setOrigin(0.5, 0);
-        }
-      }
-
-      // Status area at bottom
       if (isPast) {
-        this.add.text(cx, cardY + cardH - 40, '✓ Complete', {
+        // Greyed-out complete badge
+        const doneBadge = this.add.graphics();
+        doneBadge.setDepth(21);
+        doneBadge.fillStyle(0x224422, 0.8);
+        doneBadge.fillRoundedRect(cx - 55, cardY + cardH / 2 - 22, 110, 44, 8);
+        doneBadge.lineStyle(1, 0x44aa44, 0.6);
+        doneBadge.strokeRoundedRect(cx - 55, cardY + cardH / 2 - 22, 110, 44, 8);
+
+        this.add.text(cx, cardY + cardH / 2, '✓  Complete', {
           fontFamily: FONT,
           fontSize: '18px',
           color: '#44cc66',
-        }).setOrigin(0.5);
-      } else if (!isCurrent) {
-        this.add.text(cx, cardY + cardH - 40, '[ Locked ]', {
+        }).setOrigin(0.5).setDepth(22);
+        continue;
+      }
+
+      // ── Chip icon ──
+      const iconY = cardY + 110;
+      const chipGfx = this.add.graphics();
+      chipGfx.setDepth(21);
+      // Outer ring
+      chipGfx.lineStyle(4, chipColors[i], 0.5);
+      chipGfx.strokeCircle(cx, iconY, 38);
+      // Inner fill
+      chipGfx.fillStyle(chipColors[i], 0.18);
+      chipGfx.fillCircle(cx, iconY, 34);
+      // Inner border
+      chipGfx.lineStyle(2, chipColors[i], 0.8);
+      chipGfx.strokeCircle(cx, iconY, 28);
+
+      // Chip target number (big)
+      this.add.text(cx, iconY, numStr(chipTargets[i]), {
+        fontFamily: FONT,
+        fontSize: isBoss ? '22px' : '26px',
+        color: '#ffffff',
+        stroke: '#000000',
+        strokeThickness: 2,
+      }).setOrigin(0.5).setDepth(22);
+
+      this.add.text(cx, iconY + 46, 'CHIPS REQUIRED', {
+        fontFamily: FONT,
+        fontSize: '10px',
+        color: '#778877',
+      }).setOrigin(0.5).setDepth(22);
+
+      // ── Money reward ──
+      const rewardY = cardY + 175;
+      const rewardGfx = this.add.graphics();
+      rewardGfx.setDepth(21);
+      rewardGfx.fillStyle(0x1a1400, 0.7);
+      rewardGfx.fillRoundedRect(cx - 70, rewardY - 14, 140, 30, 6);
+      rewardGfx.lineStyle(1, COLORS.gold, 0.4);
+      rewardGfx.strokeRoundedRect(cx - 70, rewardY - 14, 140, 30, 6);
+
+      this.add.text(cx, rewardY, `$  +${moneyRewards[i]}  reward`, {
+        fontFamily: FONT,
+        fontSize: '15px',
+        color: COLORS.goldHex,
+      }).setOrigin(0.5).setDepth(22);
+
+      // ── Boss description ──
+      if (isBoss) {
+        const desc = getBlindDescription(2, rs.activeBlindId);
+        if (desc) {
+          this.add.text(cx, cardY + 215, desc, {
+            fontFamily: FONT,
+            fontSize: '12px',
+            color: '#ff9999',
+            wordWrap: { width: cardW - 28 },
+            align: 'center',
+          }).setOrigin(0.5, 0).setDepth(22);
+        }
+      }
+
+      // ── Locked label (future blinds after current) ──
+      if (!isCurrent) {
+        const lockBadge = this.add.graphics();
+        lockBadge.setDepth(21);
+        lockBadge.fillStyle(0x111111, 0.7);
+        lockBadge.fillRoundedRect(cx - 50, cardY + cardH - 56, 100, 36, 8);
+
+        this.add.text(cx, cardY + cardH - 38, '[ Locked ]', {
           fontFamily: FONT,
-          fontSize: '16px',
-          color: '#666666',
-        }).setOrigin(0.5);
-      } else {
-        // Play button
-        new Button(this, cx, cardY + cardH - 55, 160, 44, 'Play!', () => {
+          fontSize: '15px',
+          color: '#555555',
+        }).setOrigin(0.5).setDepth(22);
+        continue;
+      }
+
+      // ── Play button (current blind) ──
+      const playBtn = new Button(
+        this,
+        cx,
+        cardY + cardH - 52,
+        180,
+        48,
+        '▶  Play!',
+        () => {
           startBlind(rs);
           this.scene.start('GameScene', { runState: rs });
-        }, { color: COLORS.green, fontSize: 18 });
+        },
+        { color: COLORS.green, fontSize: 20 }
+      );
+      playBtn.setDepth(22);
 
-        // Skip button (not available for boss blind)
-        if (i < 2) {
-          new Button(this, cx, cardY + cardH - 10, 120, 34, 'Skip →', () => {
+      // Pulse the play button
+      this.tweens.add({
+        targets: playBtn,
+        scaleX: 1.04,
+        scaleY: 1.04,
+        duration: 700,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.InOut',
+      });
+
+      // Skip button (not for boss)
+      if (i < 2) {
+        const skipBtn = new Button(
+          this,
+          cx,
+          cardY + cardH - 4,
+          130,
+          32,
+          'Skip →',
+          () => {
             const rng = getRNG(rs);
             advanceToNextBlind(rs, rng);
             this.scene.restart({ runState: rs });
-          }, { color: COLORS.panel, fontSize: 14 });
-        }
+          },
+          { color: 0x1a1a2a, fontSize: 13 }
+        );
+        skipBtn.setDepth(22);
       }
     }
 
-    // Joker strip at bottom
+    // ── Joker strip ───────────────────────────────────────────────────────────
     if (rs.jokers.length > 0) {
       const stripY = GAME_HEIGHT - 100;
-      this.add.text(GAME_WIDTH / 2, stripY - 20, `Jokers (${rs.jokers.length}/${rs.maxJokerSlots})`, {
+
+      const stripBg = this.add.graphics();
+      stripBg.setDepth(18);
+      stripBg.fillStyle(0x0a0a14, 0.7);
+      stripBg.fillRoundedRect(40, stripY - 36, GAME_WIDTH - 80, 88, 8);
+      stripBg.lineStyle(1, 0x2a2a44, 0.6);
+      stripBg.strokeRoundedRect(40, stripY - 36, GAME_WIDTH - 80, 88, 8);
+
+      this.add.text(GAME_WIDTH / 2, stripY - 22, `Jokers  (${rs.jokers.length} / ${rs.maxJokerSlots})`, {
         fontFamily: FONT,
-        fontSize: '14px',
-        color: '#888888',
-      }).setOrigin(0.5);
+        fontSize: '13px',
+        color: '#666688',
+      }).setOrigin(0.5).setDepth(19);
 
       rs.jokers.forEach((j, idx) => {
-        const jx = GAME_WIDTH / 2 - ((rs.jokers.length - 1) * 42) + idx * 84;
-        const bg = this.add.graphics();
-        bg.fillStyle(COLORS.panelDark, 1);
-        bg.fillRoundedRect(jx - 34, stripY - 14, 68, 80, 5);
-        this.add.text(jx, stripY + 16, j.name, {
+        const jx = GAME_WIDTH / 2 - ((rs.jokers.length - 1) * 44) + idx * 88;
+        const jCardGfx = this.add.graphics();
+        jCardGfx.setDepth(19);
+        jCardGfx.fillStyle(COLORS.panelDark, 1);
+        jCardGfx.fillRoundedRect(jx - 36, stripY - 10, 72, 60, 6);
+        jCardGfx.lineStyle(1, 0x4a3060, 0.7);
+        jCardGfx.strokeRoundedRect(jx - 36, stripY - 10, 72, 60, 6);
+
+        this.add.text(jx, stripY + 22, j.name, {
           fontFamily: FONT,
           fontSize: '9px',
           color: '#cccccc',
-          wordWrap: { width: 64 },
+          wordWrap: { width: 68 },
           align: 'center',
-        }).setOrigin(0.5);
+        }).setOrigin(0.5).setDepth(20);
       });
     }
 
-    // Run info bar
-    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 18, `Seed: ${rs.seed}  |  Stake: ${rs.stakeLevel}`, {
+    // ── Footer ────────────────────────────────────────────────────────────────
+    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 10, `Seed: ${rs.seed}  |  Stake: ${rs.stakeLevel}`, {
       fontFamily: FONT,
       fontSize: '11px',
-      color: '#444444',
-    }).setOrigin(0.5);
+      color: '#333344',
+    }).setOrigin(0.5).setDepth(11);
   }
 }

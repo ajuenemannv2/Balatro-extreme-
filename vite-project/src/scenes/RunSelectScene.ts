@@ -1,8 +1,8 @@
 import Phaser from 'phaser';
 import { COLORS, GAME_WIDTH, FONT } from '../config.ts';
 import { Button } from '../ui/Button.ts';
-import { EventBus } from '../utils/EventBus.ts';
 import { DECK_DEFS } from '../data/DeckDefs.ts';
+import { createNewRun } from '../engine/RunManager.ts';
 
 export class RunSelectScene extends Phaser.Scene {
   private selectedStake = 0;
@@ -196,8 +196,8 @@ export class RunSelectScene extends Phaser.Scene {
     new Button(this, GAME_WIDTH / 2, 620, 240, 58, 'Start Run', () => {
       const seed = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       const deckId = DECK_DEFS[this.selectedDeckIdx].id;
-      EventBus.emit('new_run', { seed, stakeLevel: this.selectedStake, deckId });
-      this.scene.start('BlindSelectScene');
+      const rs = createNewRun(seed, this.selectedStake, deckId);
+      this.scene.start('BlindSelectScene', { runState: rs });
     }, { color: COLORS.green, fontSize: 20 });
 
     new Button(this, GAME_WIDTH / 2, 685, 140, 40, '← Back', () => {
