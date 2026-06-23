@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import type { PlayingCard } from '../types/Card.ts';
 import { drawCardFace, drawCardBack } from '../rendering/CardRenderer.ts';
 import { TextureCache } from '../rendering/TextureCache.ts';
-import { CARD_W, CARD_H, ANIM, DEPTH, COLORS } from '../config.ts';
+import { CARD_W, CARD_H, ANIM, DEPTH } from '../config.ts';
 
 function cardFaceKey(card: PlayingCard): string {
   return `card_face_${card.rank ?? 'stone'}_${card.suit ?? 'none'}_${card.enhancement}_${card.isDebuffed ? 'd' : 'n'}`;
@@ -24,8 +24,8 @@ export class CardView extends Phaser.GameObjects.Container {
   private _anchorY = 0;
   private _bobTween: Phaser.Tweens.Tween | null = null;
   private _pulseTween: Phaser.Tweens.Tween | null = null;
-  private _shimmerTimer: Phaser.Time.TimerEvent | null = null;
-  private _shimmerPhase = 0;
+  private _borderTween: Phaser.Tweens.Tween | null = null;
+  private _borderPhaseProxy = { phase: 0 };
 
   constructor(
     scene: Phaser.Scene,
@@ -150,7 +150,7 @@ export class CardView extends Phaser.GameObjects.Container {
     if (this._selected === selected) return;
     this._selected = selected;
 
-    // Stop existing bob, pulse, and shimmer
+    // Stop existing bob, pulse, and border tween
     if (this._bobTween) {
       this._bobTween.stop();
       this._bobTween = null;
@@ -159,9 +159,9 @@ export class CardView extends Phaser.GameObjects.Container {
       this._pulseTween.stop();
       this._pulseTween = null;
     }
-    if (this._shimmerTimer) {
-      this._shimmerTimer.destroy();
-      this._shimmerTimer = null;
+    if (this._borderTween) {
+      this._borderTween.stop();
+      this._borderTween = null;
     }
     // Kill any Y tweens on this container
     this.scene.tweens.killTweensOf(this);
@@ -202,24 +202,26 @@ export class CardView extends Phaser.GameObjects.Container {
         },
       });
 
-      // Bright selected border with corner dots — starts blue
-      this._shimmerPhase = 0;
-      this._drawSelectBorder(this._shimmerPhase);
-
-      // Cycle border color between blue (#88ccff) and teal (#44ffcc) every 600ms
-      this._shimmerTimer = this.scene.time.addEvent({
-        delay: 600,
-        loop: true,
-        callback: () => {
-          this._shimmerPhase = (this._shimmerPhase + 1) % 2;
-          this._drawSelectBorder(this._shimmerPhase);
+      // Bright selected border — smoothly cycles between blue and teal
+      this._borderPhaseProxy.phase = 0;
+      this._drawSelectBorder(0);
+      this._borderTween = this.scene.tweens.add({
+        targets: this._borderPhaseProxy,
+        phase: 1,
+        duration: 1200,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.InOut',
+        onUpdate: () => {
+          if (this._selected) this._drawSelectBorder(this._borderPhaseProxy.phase);
         },
       });
 
-      // Pulse the selection glow
+      // Pulse the selection glow — starts invisible, pulses up to soft visibility
+      this.selectGfx.setAlpha(0);
       this._pulseTween = this.scene.tweens.add({
         targets: this.selectGfx,
-        alpha: 0.45,
+        alpha: 0.35,
         duration: 750,
         yoyo: true,
         repeat: -1,
@@ -258,11 +260,18 @@ export class CardView extends Phaser.GameObjects.Container {
 
   private _drawSelectBorder(phase = 0): void {
     this.selectGfx.clear();
-    this.selectGfx.setAlpha(1);
 
-    // Shimmer: alternate between blue and teal
-    const borderColor = phase === 0 ? COLORS.chipBlue : 0x44ffcc;
-    const accentColor = phase === 0 ? 0x88ccff : 0x99ffee;
+    // Smooth RGB lerp: chipBlue (0x4a,0x90,0xd9) → teal (0x44,0xff,0xcc)
+    const r = Math.round(0x4a + (0x44 - 0x4a) * phase);
+    const g = Math.round(0x90 + (0xff - 0x90) * phase);
+    const b = Math.round(0xd9 + (0xcc - 0xd9) * phase);
+    const borderColor = (r << 16) | (g << 8) | b;
+
+    // Accent: lighter version — (0x88,0xcc,0xff) → (0x99,0xff,0xee)
+    const ar = Math.round(0x88 + (0x99 - 0x88) * phase);
+    const ag = Math.round(0xcc + (0xff - 0xcc) * phase);
+    const ab = Math.round(0xff + (0xee - 0xff) * phase);
+    const accentColor = (ar << 16) | (ag << 8) | ab;
 
     const hw = CARD_W / 2;
     const hh = CARD_H / 2;
@@ -330,52 +339,39 @@ export class CardView extends Phaser.GameObjects.Container {
     });
   }
 
-  // Called when this card is scored — burst flash + scale bounce
+  // Called when this card is scored — ring flash around edge + scale bounce
   glow(color: number): void {
-    // Scale bounce on the whole container
+    // Scale bounce
     this.scene.tweens.add({
       targets: this,
-      scaleX: 1.22,
-      scaleY: 1.22,
-      duration: 130,
+      scaleX: 1.18,
+      scaleY: 1.18,
+      duration: 100,
       ease: 'Quad.Out',
       yoyo: true,
       onYoyo: () => {
-        // Second smaller bounce
         this.scene.tweens.add({
           targets: this,
           scaleX: this._selected ? 1.08 : 1.0,
           scaleY: this._selected ? 1.08 : 1.0,
-          duration: 110,
+          duration: 90,
           ease: 'Quad.Out',
         });
       },
     });
 
-    // Fill flash
+    // Glow RING around card edge — no fill behind the card face
     this.glowGfx.clear();
-    this.glowGfx.fillStyle(color, 0.55);
-    this.glowGfx.fillRoundedRect(
-      -CARD_W / 2 - 6,
-      -CARD_H / 2 - 6,
-      CARD_W + 12,
-      CARD_H + 12,
-      9
-    );
-    // Bright inner border
-    this.glowGfx.lineStyle(3, color, 0.9);
-    this.glowGfx.strokeRoundedRect(
-      -CARD_W / 2 - 3,
-      -CARD_H / 2 - 3,
-      CARD_W + 6,
-      CARD_H + 6,
-      8
-    );
+    this.glowGfx.setAlpha(1);
+    this.glowGfx.lineStyle(6, color, 0.85);
+    this.glowGfx.strokeRoundedRect(-CARD_W / 2 - 4, -CARD_H / 2 - 4, CARD_W + 8, CARD_H + 8, 9);
+    this.glowGfx.lineStyle(14, color, 0.22);
+    this.glowGfx.strokeRoundedRect(-CARD_W / 2 - 9, -CARD_H / 2 - 9, CARD_W + 18, CARD_H + 18, 13);
 
     this.scene.tweens.add({
       targets: this.glowGfx,
       alpha: 0,
-      duration: ANIM.popupDuration * 0.75,
+      duration: 600,
       ease: 'Quad.Out',
       onComplete: () => {
         this.glowGfx.clear();

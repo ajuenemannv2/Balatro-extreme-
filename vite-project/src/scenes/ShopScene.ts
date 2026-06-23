@@ -1,19 +1,41 @@
 import Phaser from 'phaser';
 import type { RunState } from '../types/Run.ts';
-import type { ShopState, ShopItem } from '../types/Shop.ts';
+import type { ShopState, ShopItem, PackType } from '../types/Shop.ts';
 import { COLORS, GAME_WIDTH, GAME_HEIGHT, CARD_W, CARD_H, FONT, DEPTH } from '../config.ts';
 import { Button } from '../ui/Button.ts';
 import { JokerView } from '../ui/JokerView.ts';
 import { ScorePopup } from '../ui/ScorePopup.ts';
 import { TextureCache } from '../rendering/TextureCache.ts';
-import { generateShop, rerollShop } from '../engine/ShopGenerator.ts';
+import { generateShop, rerollShop, generatePackContents } from '../engine/ShopGenerator.ts';
 import { canAfford, buyItem, sellJoker, sellConsumable } from '../engine/EconomyEngine.ts';
 import { addJokerToRun, getRNG } from '../engine/RunManager.ts';
 import { saveRun } from '../engine/SaveSystem.ts';
 import { drawJokerFace } from '../rendering/JokerRenderer.ts';
 import { drawTarotFace, drawPlanetFace, drawSpectralFace } from '../rendering/ConsumableRenderer.ts';
+import { drawCardFace, drawCardBack } from '../rendering/CardRenderer.ts';
 import { VOUCHER_DEFS } from '../data/VoucherDefs.ts';
 import type { RNG } from '../engine/RNG.ts';
+import type { TarotDefinition, PlanetDefinition, SpectralDefinition } from '../types/Consumable.ts';
+import type { JokerDefinition } from '../types/Joker.ts';
+import type { Rank, Suit } from '../types/Card.ts';
+import { makeCard, shuffleDeck } from '../engine/DeckBuilder.ts';
+
+type PackContent =
+  | { kind: 'tarot'; def: TarotDefinition }
+  | { kind: 'planet'; def: PlanetDefinition }
+  | { kind: 'spectral'; def: SpectralDefinition }
+  | { kind: 'joker'; def: JokerDefinition }
+  | { kind: 'standard'; rank: Rank; suit: Suit };
+
+const PACK_PICKS: Record<PackType, number> = {
+  arcana: 1, mega_arcana: 2,
+  celestial: 1, mega_celestial: 2,
+  spectral: 1,
+  buffoon: 1, mega_buffoon: 2,
+  standard: 1, mega_standard: 2,
+};
+
+const CARD_BACK_KEY = 'card_back_global';
 
 export class ShopScene extends Phaser.Scene {
   private runState!: RunState;
@@ -372,10 +394,253 @@ export class ShopScene extends Phaser.Scene {
         vDef.effect?.(rs);
         ScorePopup.spawn(this, GAME_WIDTH / 2, 300, `Got ${vDef.name}!`, '#cc88ff');
       }
+    } else if (item.type === 'pack' && item.packType) {
+      const rng = getRNG(rs);
+      const raw = generatePackContents(item.packType, rs, rng);
+      rs.rngState = rng.getState();
+      const contents = this._parsePackContents(item.packType, raw);
+      this._openPackOverlay(item.packType, contents);
+      saveRun(rs);
+      this._buildShopItems();
+      return;
     }
 
     saveRun(rs);
     this._buildShopItems();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pack helpers
+  // ---------------------------------------------------------------------------
+
+  private _parsePackContents(packType: PackType, raw: unknown[]): PackContent[] {
+    switch (packType) {
+      case 'arcana':
+      case 'mega_arcana':
+        return (raw as TarotDefinition[]).map(def => ({ kind: 'tarot' as const, def }));
+      case 'celestial':
+      case 'mega_celestial':
+        return (raw as PlanetDefinition[]).map(def => ({ kind: 'planet' as const, def }));
+      case 'spectral':
+        return (raw as SpectralDefinition[]).map(def => ({ kind: 'spectral' as const, def }));
+      case 'buffoon':
+      case 'mega_buffoon':
+        return (raw as JokerDefinition[]).filter(Boolean).map(def => ({ kind: 'joker' as const, def }));
+      case 'standard':
+      case 'mega_standard':
+        return (raw as { rank: Rank; suit: Suit }[]).map(({ rank, suit }) => ({ kind: 'standard' as const, rank, suit }));
+    }
+  }
+
+  private _buildPackTexKey(content: PackContent): string {
+    switch (content.kind) {
+      case 'tarot': {
+        const key = `pack_tarot_${content.def.id}`;
+        this.textureCache.getOrCreate(key, CARD_W, CARD_H, c => drawTarotFace(c, content.def.id, content.def.name));
+        return key;
+      }
+      case 'planet': {
+        const key = `pack_planet_${content.def.id}`;
+        this.textureCache.getOrCreate(key, CARD_W, CARD_H, c => drawPlanetFace(c, content.def.id, content.def.name));
+        return key;
+      }
+      case 'spectral': {
+        const key = `pack_spectral_${content.def.id}`;
+        this.textureCache.getOrCreate(key, CARD_W, CARD_H, c => drawSpectralFace(c, content.def.id, content.def.name));
+        return key;
+      }
+      case 'joker': {
+        const key = `pack_joker_${content.def.id}`;
+        this.textureCache.getOrCreate(key, CARD_W, CARD_H, c => drawJokerFace(c, content.def.id, content.def.name, content.def.rarity));
+        return key;
+      }
+      case 'standard': {
+        const key = `pack_std_${content.rank}_${content.suit}`;
+        this.textureCache.getOrCreate(key, CARD_W, CARD_H, c => drawCardFace(c, content.rank, content.suit, 'none', false, false));
+        return key;
+      }
+    }
+  }
+
+  private _applyPackPick(content: PackContent): void {
+    const rs = this.runState;
+    switch (content.kind) {
+      case 'tarot':
+      case 'planet':
+      case 'spectral': {
+        if (rs.consumables.length >= rs.maxConsumableSlots) {
+          ScorePopup.spawn(this, GAME_WIDTH / 2, 300, 'Consumable slots full!', '#ff8888');
+          return;
+        }
+        rs.consumables.push({
+          instanceId: `${content.kind}_${content.def.id}_${Date.now()}`,
+          type: content.kind,
+          defId: content.def.id,
+        });
+        ScorePopup.spawn(this, GAME_WIDTH / 2, 300, `Got ${content.def.name}!`, COLORS.goldHex);
+        break;
+      }
+      case 'joker': {
+        const added = addJokerToRun(rs, content.def.id, 'base');
+        if (!added) {
+          ScorePopup.spawn(this, GAME_WIDTH / 2, 300, 'Joker slots full!', '#ff8888');
+        } else {
+          ScorePopup.spawn(this, GAME_WIDTH / 2, 300, `Got ${content.def.name}!`, COLORS.goldHex);
+          this._buildJokerRow();
+        }
+        break;
+      }
+      case 'standard': {
+        const card = makeCard(content.rank, content.suit);
+        rs.deck.push(card);
+        rs.deck = shuffleDeck(rs.deck, this.rng);
+        ScorePopup.spawn(this, GAME_WIDTH / 2, 300, `Added ${content.rank}${content.suit[0]}!`, COLORS.goldHex);
+        break;
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pack opening overlay
+  // ---------------------------------------------------------------------------
+
+  private _openPackOverlay(packType: PackType, contents: PackContent[]): void {
+    const maxPicks = PACK_PICKS[packType] ?? 1;
+    const takeAll = maxPicks >= contents.length;
+
+    // Pre-build card back texture
+    this.textureCache.getOrCreate(CARD_BACK_KEY, CARD_W, CARD_H, c => drawCardBack(c));
+
+    // All objects tracked for cleanup
+    const overlayObjs: Phaser.GameObjects.GameObject[] = [];
+
+    const closeOverlay = () => {
+      this.tweens.add({
+        targets: scrim, fillAlpha: 0, duration: 200,
+        onComplete: () => overlayObjs.forEach(o => { try { o.destroy(); } catch { /* already destroyed */ } }),
+      });
+    };
+
+    // Scrim — intercepts pointer events
+    const scrim = this.add.rectangle(
+      GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0,
+    ).setInteractive().setDepth(198);
+    overlayObjs.push(scrim);
+    this.tweens.add({ targets: scrim, fillAlpha: 0.75, duration: 240 });
+
+    // Panel
+    const panelW = Math.max(420, Math.min(contents.length * 112 + 100, 920));
+    const panelH = 390;
+    const panelX = GAME_WIDTH / 2 - panelW / 2;
+    const panelY = GAME_HEIGHT / 2 - panelH / 2;
+
+    const panel = this.add.graphics().setDepth(199);
+    panel.fillStyle(COLORS.panelDark, 0.97);
+    panel.lineStyle(2, COLORS.gold, 0.85);
+    panel.fillRoundedRect(panelX, panelY, panelW, panelH, 14);
+    panel.strokeRoundedRect(panelX, panelY, panelW, panelH, 14);
+    overlayObjs.push(panel);
+
+    // Pack title
+    const packName = packType.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+    overlayObjs.push(
+      this.add.text(GAME_WIDTH / 2, panelY + 28, packName, {
+        fontFamily: FONT, fontSize: '26px', color: COLORS.goldHex,
+      }).setOrigin(0.5).setDepth(200),
+    );
+
+    const chooseLabel = takeAll ? `Take all ${contents.length}` : `Choose ${maxPicks} of ${contents.length}`;
+    overlayObjs.push(
+      this.add.text(GAME_WIDTH / 2, panelY + 60, chooseLabel, {
+        fontFamily: FONT, fontSize: '14px', color: '#aaaaaa',
+      }).setOrigin(0.5).setDepth(200),
+    );
+
+    // Cards
+    const n = contents.length;
+    const spacing = n > 1 ? Math.min(110, (panelW - 100) / (n - 1)) : 0;
+    const totalW = (n - 1) * spacing;
+    const baseX = GAME_WIDTH / 2 - totalW / 2;
+    const cardsY = GAME_HEIGHT / 2 + 20;
+
+    const selected = new Set<number>();
+    const cardImgs: Phaser.GameObjects.Image[] = [];
+    const selGfxArr: Phaser.GameObjects.Graphics[] = [];
+
+    const redrawSelections = () => {
+      for (let i = 0; i < n; i++) {
+        const g = selGfxArr[i];
+        g.clear();
+        const cx = baseX + i * spacing;
+        if (selected.has(i)) {
+          g.lineStyle(3, COLORS.gold, 1);
+          g.strokeRoundedRect(cx - CARD_W / 2 - 3, cardsY - CARD_H / 2 - 3, CARD_W + 6, CARD_H + 6, 8);
+          g.lineStyle(10, COLORS.gold, 0.22);
+          g.strokeRoundedRect(cx - CARD_W / 2 - 8, cardsY - CARD_H / 2 - 8, CARD_W + 16, CARD_H + 16, 12);
+          cardImgs[i]?.setScale(1.08);
+        } else {
+          cardImgs[i]?.setScale(1.0);
+        }
+      }
+      takeBtn.setEnabled(takeAll || selected.size >= maxPicks);
+    };
+
+    contents.forEach((content, ci) => {
+      const cx = baseX + ci * spacing;
+
+      const selGfx = this.add.graphics().setDepth(200);
+      selGfxArr.push(selGfx);
+      overlayObjs.push(selGfx);
+
+      const img = this.add.image(cx, cardsY, CARD_BACK_KEY).setAlpha(0).setDepth(201);
+      cardImgs.push(img);
+      overlayObjs.push(img);
+
+      // Appear face-down
+      const appearDelay = 280 + ci * 130;
+      this.tweens.add({ targets: img, alpha: 1, duration: 140, delay: appearDelay });
+
+      // Flip face-up
+      this.time.delayedCall(appearDelay + 180, () => {
+        this.tweens.add({
+          targets: img, scaleX: 0, duration: 110, ease: 'Quad.In',
+          onComplete: () => {
+            img.setTexture(this._buildPackTexKey(content));
+            img.setInteractive({ useHandCursor: true });
+            this.tweens.add({ targets: img, scaleX: 1, duration: 110, ease: 'Quad.Out' });
+
+            if (!takeAll) {
+              img.on('pointerdown', () => {
+                if (selected.has(ci)) {
+                  selected.delete(ci);
+                } else if (selected.size < maxPicks) {
+                  selected.add(ci);
+                }
+                redrawSelections();
+              });
+            }
+            img.on('pointerover', () => { if (!selected.has(ci)) img.setScale(1.05); });
+            img.on('pointerout', () => { if (!selected.has(ci)) img.setScale(1.0); });
+          },
+        });
+      });
+    });
+
+    // Take button
+    const takeBtn = new Button(
+      this, GAME_WIDTH / 2, panelY + panelH - 32,
+      160, 42, 'Take',
+      () => {
+        const picks = takeAll ? contents.map((_, i) => i) : [...selected];
+        for (const idx of picks) this._applyPackPick(contents[idx]);
+        saveRun(this.runState);
+        closeOverlay();
+      },
+      { color: takeAll ? COLORS.green : 0x555555, fontSize: 16 },
+    );
+    takeBtn.setEnabled(takeAll);
+    takeBtn.setDepth(202);
+    overlayObjs.push(takeBtn);
   }
 
   // ---------------------------------------------------------------------------
