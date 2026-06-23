@@ -10,6 +10,7 @@ import { generateShop, rerollShop, generatePackContents } from '../engine/ShopGe
 import { canAfford, buyItem, sellJoker, sellConsumable } from '../engine/EconomyEngine.ts';
 import { addJokerToRun, getRNG } from '../engine/RunManager.ts';
 import { saveRun } from '../engine/SaveSystem.ts';
+import { SFX } from '../utils/SoundEngine.ts';
 import { drawJokerFace } from '../rendering/JokerRenderer.ts';
 import { drawTarotFace, drawPlanetFace, drawSpectralFace } from '../rendering/ConsumableRenderer.ts';
 import { drawCardFace, drawCardBack } from '../rendering/CardRenderer.ts';
@@ -343,6 +344,7 @@ export class ShopScene extends Phaser.Scene {
         item.sold = false;
         return;
       }
+      SFX.purchase();
       ScorePopup.spawn(this, GAME_WIDTH / 2, 300, `Got ${item.jokerDef.name}!`, COLORS.goldHex);
       this._buildJokerRow();
     } else if (item.type === 'tarot' && item.tarotDef) {
@@ -358,6 +360,7 @@ export class ShopScene extends Phaser.Scene {
         type: 'tarot',
         defId: item.tarotDef.id,
       });
+      SFX.purchase();
       ScorePopup.spawn(this, GAME_WIDTH / 2, 300, `Got ${item.tarotDef.name}!`, '#c9a227');
     } else if (item.type === 'planet' && item.planetDef) {
       if (rs.consumables.length >= rs.maxConsumableSlots) {
@@ -372,6 +375,7 @@ export class ShopScene extends Phaser.Scene {
         type: 'planet',
         defId: item.planetDef.id,
       });
+      SFX.purchase();
       ScorePopup.spawn(this, GAME_WIDTH / 2, 300, `Got ${item.planetDef.name}!`, '#88ccff');
     } else if (item.type === 'spectral' && item.spectralDef) {
       if (rs.consumables.length >= rs.maxConsumableSlots) {
@@ -386,20 +390,28 @@ export class ShopScene extends Phaser.Scene {
         type: 'spectral',
         defId: item.spectralDef.id,
       });
+      SFX.purchase();
       ScorePopup.spawn(this, GAME_WIDTH / 2, 300, `Got ${item.spectralDef.name}!`, '#88ccdd');
     } else if (item.type === 'voucher' && item.voucherId) {
       const vDef = VOUCHER_DEFS.find(v => v.id === item.voucherId);
       if (vDef) {
         rs.vouchers.push(item.voucherId);
         vDef.effect?.(rs);
+        SFX.purchase();
         ScorePopup.spawn(this, GAME_WIDTH / 2, 300, `Got ${vDef.name}!`, '#cc88ff');
       }
     } else if (item.type === 'pack' && item.packType) {
-      const rng = getRNG(rs);
-      const raw = generatePackContents(item.packType, rs, rng);
-      rs.rngState = rng.getState();
-      const contents = this._parsePackContents(item.packType, raw);
-      this._openPackOverlay(item.packType, contents);
+      try {
+        const rng = getRNG(rs);
+        const raw = generatePackContents(item.packType, rs, rng);
+        rs.rngState = rng.getState();
+        const contents = this._parsePackContents(item.packType, raw);
+        SFX.packOpen();
+        this._openPackOverlay(item.packType, contents);
+      } catch (err) {
+        console.error('Pack open failed:', err);
+        ScorePopup.spawn(this, GAME_WIDTH / 2, 300, 'Pack failed — see console', '#ff4444');
+      }
       saveRun(rs);
       this._buildShopItems();
       return;

@@ -12,6 +12,7 @@ import { calcRoundEndMoney } from '../engine/EconomyEngine.ts';
 import { applyDeferredEffects, advanceToNextBlind, getRNG } from '../engine/RunManager.ts';
 import { saveRun } from '../engine/SaveSystem.ts';
 import { EventBus } from '../utils/EventBus.ts';
+import { SFX } from '../utils/SoundEngine.ts';
 import { CardView } from '../ui/CardView.ts';
 import { JokerView } from '../ui/JokerView.ts';
 import { ScorePopup } from '../ui/ScorePopup.ts';
@@ -92,6 +93,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private _initScene(): void {
+    // Reset state that persists across scene restarts on the same instance
+    this.isAnimating = false;
+    this.playAreaViews = [];
+    this.handViews = [];
+    this.jokerViews = [];
+    this.consumableViews = [];
+
     this.textureCache = new TextureCache(this, 512);
     this.currentChips = 0;
     this.currentMult = 0;
@@ -715,6 +723,7 @@ export class GameScene extends Phaser.Scene {
     this.isAnimating = true;
     this.playBtn.setEnabled(false);
     this.discardBtn.setEnabled(false);
+    SFX.handPlay();
 
     const selectedCards = selected.map(cv => cv.cardData);
 
@@ -966,24 +975,28 @@ export class GameScene extends Phaser.Scene {
         mult = step.multAfter;
       }
 
+      // Track the scoring card's position so chip/mult popups appear above it
+      let cardX = GAME_WIDTH / 2;
+      let cardY = PLAY_AREA_Y;
+
       for (const hint of step.hints) {
         if (hint.type === 'card_glow') {
           const cv = this.playAreaViews.find(v => v.cardData.id === hint.cardId);
-          const glowColor = _glowColorForSource(step.source);
-          cv?.glow(glowColor);
+          if (cv) { cardX = cv.x; cardY = cv.y; }
+          cv?.glow(_glowColorForSource(step.source));
         } else if (hint.type === 'joker_activate') {
           const jv = this.jokerViews.find(v => v.jokerData.instanceId === hint.jokerId);
           jv?.flash();
         } else if (hint.type === 'chip_add' && hint.delta > 0) {
           const sz = hint.delta >= 50 ? 'lg' : hint.delta >= 20 ? 'md' : 'sm';
-          ScorePopup.spawn(this, GAME_WIDTH / 2 - 100, PLAY_AREA_Y - 60, `+${numStr(hint.delta)} Chips`, '#4a90d9', sz);
+          ScorePopup.spawn(this, cardX, cardY - CARD_H / 2 - 28, `+${numStr(hint.delta)}`, '#4a90d9', sz);
         } else if (hint.type === 'mult_add' && hint.delta > 0) {
           const sz = hint.delta >= 10 ? 'lg' : hint.delta >= 4 ? 'md' : 'sm';
-          ScorePopup.spawn(this, GAME_WIDTH / 2 + 100, PLAY_AREA_Y - 60, `+${hint.delta} Mult`, '#e74c3c', sz);
+          ScorePopup.spawn(this, cardX, cardY - CARD_H / 2 - 28, `+${hint.delta}×`, '#e74c3c', sz);
         } else if (hint.type === 'mult_mul') {
-          ScorePopup.spawn(this, GAME_WIDTH / 2 + 100, PLAY_AREA_Y - 60, `×${hint.factor} Mult`, '#ff8844', 'lg');
+          ScorePopup.spawn(this, cardX, cardY - CARD_H / 2 - 28, `×${hint.factor}`, '#ff8844', 'lg');
         } else if (hint.type === 'money_add') {
-          ScorePopup.spawn(this, GAME_WIDTH / 2, PLAY_AREA_Y + 50, `+$${hint.delta}`, COLORS.goldHex, 'md');
+          ScorePopup.spawn(this, cardX, cardY + CARD_H / 2 + 20, `+$${hint.delta}`, COLORS.goldHex, 'md');
         }
       }
 
@@ -1148,6 +1161,7 @@ export class GameScene extends Phaser.Scene {
       j.onRoundEnd?.(rs);
     }
 
+    SFX.blindWon();
     ScorePopup.spawn(this, GAME_WIDTH / 2, PLAY_AREA_Y, `Round Won! +$${earned}`, '#44cc66');
     await this._delay(1200);
 
@@ -1172,6 +1186,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private async _onGameOver(): Promise<void> {
+    SFX.gameOver();
     ScorePopup.spawn(this, GAME_WIDTH / 2, PLAY_AREA_Y, 'Out of hands!', '#ff4444');
     await this._delay(1500);
     this.scene.start('GameOverScene', { runState: this.runState, reason: 'out_of_hands' });

@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { COLORS, GAME_WIDTH, GAME_HEIGHT, FONT } from '../config.ts';
 import { Button } from '../ui/Button.ts';
 import { hasSave, loadRun } from '../engine/SaveSystem.ts';
+import { SFX } from '../utils/SoundEngine.ts';
 
 export class MenuScene extends Phaser.Scene {
   constructor() {
@@ -10,6 +11,7 @@ export class MenuScene extends Phaser.Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor(COLORS.bgHex);
+    this.input.once('pointerdown', () => SFX.unlock());
 
     // ── Deep radial background ────────────────────────────────────────────────
     const bgGfx = this.add.graphics();

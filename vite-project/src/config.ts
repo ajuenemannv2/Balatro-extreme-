@@ -53,7 +53,7 @@ export const ANIM = {
   dealStagger:     80,
   playDuration:    300,
   discardDuration: 250,
-  scoreStepDelay:  180,
+  scoreStepDelay:  280,
   counterDuration: 400,
   popupDuration:   900,
   jokerFlashDuration: 300,

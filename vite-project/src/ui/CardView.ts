@@ -3,6 +3,7 @@ import type { PlayingCard } from '../types/Card.ts';
 import { drawCardFace, drawCardBack } from '../rendering/CardRenderer.ts';
 import { TextureCache } from '../rendering/TextureCache.ts';
 import { CARD_W, CARD_H, ANIM, DEPTH } from '../config.ts';
+import { SFX } from '../utils/SoundEngine.ts';
 
 function cardFaceKey(card: PlayingCard): string {
   return `card_face_${card.rank ?? 'stone'}_${card.suit ?? 'none'}_${card.enhancement}_${card.isDebuffed ? 'd' : 'n'}`;
@@ -15,17 +16,13 @@ export class CardView extends Phaser.GameObjects.Container {
 
   private cache: TextureCache;
   private cardImage: Phaser.GameObjects.Image;
-  private glowGfx: Phaser.GameObjects.Graphics;     // scoring burst glow
-  private selectGfx: Phaser.GameObjects.Graphics;   // selection border
-  private shadowGfx: Phaser.GameObjects.Graphics;   // drop shadow
+  private glowGfx: Phaser.GameObjects.Graphics;
+  private shadowGfx: Phaser.GameObjects.Graphics;
 
   private _selected = false;
   private _faceUp = true;
   private _anchorY = 0;
   private _bobTween: Phaser.Tweens.Tween | null = null;
-  private _pulseTween: Phaser.Tweens.Tween | null = null;
-  private _borderTween: Phaser.Tweens.Tween | null = null;
-  private _borderPhaseProxy = { phase: 0 };
 
   constructor(
     scene: Phaser.Scene,
@@ -54,17 +51,12 @@ export class CardView extends Phaser.GameObjects.Container {
     this.cardImage = scene.add.image(0, 0, texKey);
     this.add(this.cardImage);
 
-    // Selection glow layer (above card image)
-    this.selectGfx = scene.add.graphics();
-    this.add(this.selectGfx);
-
     this._applyShader();
 
     this.setSize(CARD_W, CARD_H);
     this.setInteractive({ useHandCursor: true });
     this.setDepth(DEPTH.cards);
 
-    // Hover: subtle lift + scale of the card image
     this.on('pointerover', () => {
       if (!this._selected) {
         scene.tweens.add({
@@ -74,7 +66,6 @@ export class CardView extends Phaser.GameObjects.Container {
           duration: 110,
           ease: 'Quad.Out',
         });
-        // Lighten shadow
         this.shadowGfx.clear();
         this.shadowGfx.fillStyle(0x000000, 0.18);
         this.shadowGfx.fillRoundedRect(-CARD_W / 2 + 6, -CARD_H / 2 + 10, CARD_W, CARD_H, 6);
@@ -150,27 +141,17 @@ export class CardView extends Phaser.GameObjects.Container {
     if (this._selected === selected) return;
     this._selected = selected;
 
-    // Stop existing bob, pulse, and border tween
     if (this._bobTween) {
       this._bobTween.stop();
       this._bobTween = null;
     }
-    if (this._pulseTween) {
-      this._pulseTween.stop();
-      this._pulseTween = null;
-    }
-    if (this._borderTween) {
-      this._borderTween.stop();
-      this._borderTween = null;
-    }
-    // Kill any Y tweens on this container
     this.scene.tweens.killTweensOf(this);
 
     if (selected) {
-      // Snap anchor from current position before moving
+      SFX.cardSelect();
       this._anchorY = this.y;
 
-      // Initial scale pop: burst to 1.15 then settle into the lift
+      // Scale pop to 1.15, then lift + settle to 1.08 with spring feel
       this.scene.tweens.add({
         targets: this,
         scaleX: 1.15,
@@ -178,7 +159,6 @@ export class CardView extends Phaser.GameObjects.Container {
         duration: 80,
         ease: 'Quad.Out',
         onComplete: () => {
-          // Lift + scale with a snappy spring feel
           this.scene.tweens.add({
             targets: this,
             y: this._anchorY - 26,
@@ -187,7 +167,6 @@ export class CardView extends Phaser.GameObjects.Container {
             duration: 180,
             ease: 'Back.Out',
             onComplete: () => {
-              // Gentle perpetual bob with slight rotation wobble
               this._bobTween = this.scene.tweens.add({
                 targets: this,
                 y: this.y - 6,
@@ -202,47 +181,15 @@ export class CardView extends Phaser.GameObjects.Container {
         },
       });
 
-      // Bright selected border — smoothly cycles between blue and teal
-      this._borderPhaseProxy.phase = 0;
-      this._drawSelectBorder(0);
-      this._borderTween = this.scene.tweens.add({
-        targets: this._borderPhaseProxy,
-        phase: 1,
-        duration: 1200,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.InOut',
-        onUpdate: () => {
-          if (this._selected) this._drawSelectBorder(this._borderPhaseProxy.phase);
-        },
-      });
-
-      // Pulse the selection glow — starts invisible, pulses up to soft visibility
-      this.selectGfx.setAlpha(0);
-      this._pulseTween = this.scene.tweens.add({
-        targets: this.selectGfx,
-        alpha: 0.35,
-        duration: 750,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.InOut',
-      });
-
       // Elevated shadow
       this.shadowGfx.clear();
       this.shadowGfx.fillStyle(0x000000, 0.45);
       this.shadowGfx.fillRoundedRect(-CARD_W / 2 + 5, -CARD_H / 2 + 12, CARD_W, CARD_H, 6);
 
-      // Reset hover scale
       this.cardImage.setScale(1.0);
-
       this.setDepth(DEPTH.cardSelected);
     } else {
-      // Clear selection visuals
-      this.selectGfx.clear();
-      this.selectGfx.setAlpha(1);
-
-      // Return to anchor, reset rotation
+      SFX.cardDeselect();
       this.scene.tweens.add({
         targets: this,
         y: this._anchorY,
@@ -255,50 +202,6 @@ export class CardView extends Phaser.GameObjects.Container {
 
       this._resetShadow();
       this.setDepth(DEPTH.cards);
-    }
-  }
-
-  private _drawSelectBorder(phase = 0): void {
-    this.selectGfx.clear();
-
-    // Smooth RGB lerp: chipBlue (0x4a,0x90,0xd9) → teal (0x44,0xff,0xcc)
-    const r = Math.round(0x4a + (0x44 - 0x4a) * phase);
-    const g = Math.round(0x90 + (0xff - 0x90) * phase);
-    const b = Math.round(0xd9 + (0xcc - 0xd9) * phase);
-    const borderColor = (r << 16) | (g << 8) | b;
-
-    // Accent: lighter version — (0x88,0xcc,0xff) → (0x99,0xff,0xee)
-    const ar = Math.round(0x88 + (0x99 - 0x88) * phase);
-    const ag = Math.round(0xcc + (0xff - 0xcc) * phase);
-    const ab = Math.round(0xff + (0xee - 0xff) * phase);
-    const accentColor = (ar << 16) | (ag << 8) | ab;
-
-    const hw = CARD_W / 2;
-    const hh = CARD_H / 2;
-
-    // Wide outer glow ring
-    this.selectGfx.lineStyle(8, borderColor, 0.22);
-    this.selectGfx.strokeRoundedRect(-hw - 5, -hh - 5, CARD_W + 10, CARD_H + 10, 9);
-
-    // Medium ring
-    this.selectGfx.lineStyle(3, borderColor, 0.7);
-    this.selectGfx.strokeRoundedRect(-hw - 2, -hh - 2, CARD_W + 4, CARD_H + 4, 8);
-
-    // Inner bright ring
-    this.selectGfx.lineStyle(1.5, accentColor, 0.9);
-    this.selectGfx.strokeRoundedRect(-hw, -hh, CARD_W, CARD_H, 6);
-
-    // Corner diamond accents
-    const corners: [number, number][] = [
-      [-hw - 2, -hh - 2],
-      [ hw + 2, -hh - 2],
-      [ hw + 2,  hh + 2],
-      [-hw - 2,  hh + 2],
-    ];
-    for (const [cx, cy] of corners) {
-      this.selectGfx.fillStyle(accentColor, 1);
-      this.selectGfx.fillRect(cx - 3, cy - 1, 6, 2);
-      this.selectGfx.fillRect(cx - 1, cy - 3, 2, 6);
     }
   }
 
@@ -318,6 +221,7 @@ export class CardView extends Phaser.GameObjects.Container {
   }
 
   async flip(): Promise<void> {
+    SFX.cardFlip();
     return new Promise((resolve) => {
       this.scene.tweens.add({
         targets: this.cardImage,
@@ -339,9 +243,8 @@ export class CardView extends Phaser.GameObjects.Container {
     });
   }
 
-  // Called when this card is scored — ring flash around edge + scale bounce
+  // Ring flash around card edge when scored
   glow(color: number): void {
-    // Scale bounce
     this.scene.tweens.add({
       targets: this,
       scaleX: 1.18,
@@ -360,7 +263,6 @@ export class CardView extends Phaser.GameObjects.Container {
       },
     });
 
-    // Glow RING around card edge — no fill behind the card face
     this.glowGfx.clear();
     this.glowGfx.setAlpha(1);
     this.glowGfx.lineStyle(6, color, 0.85);
