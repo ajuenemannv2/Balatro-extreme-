@@ -36,5 +36,6 @@ export interface RunState {
   handsThisRun: number;
   discountsActive: number;
   freeRerollsPerShop: number;
+  lastHandScore: number;
 }
 

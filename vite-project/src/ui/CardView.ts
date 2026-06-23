@@ -24,6 +24,8 @@ export class CardView extends Phaser.GameObjects.Container {
   private _anchorY = 0;
   private _bobTween: Phaser.Tweens.Tween | null = null;
   private _pulseTween: Phaser.Tweens.Tween | null = null;
+  private _shimmerTimer: Phaser.Time.TimerEvent | null = null;
+  private _shimmerPhase = 0;
 
   constructor(
     scene: Phaser.Scene,
@@ -148,7 +150,7 @@ export class CardView extends Phaser.GameObjects.Container {
     if (this._selected === selected) return;
     this._selected = selected;
 
-    // Stop existing bob and pulse
+    // Stop existing bob, pulse, and shimmer
     if (this._bobTween) {
       this._bobTween.stop();
       this._bobTween = null;
@@ -157,6 +159,10 @@ export class CardView extends Phaser.GameObjects.Container {
       this._pulseTween.stop();
       this._pulseTween = null;
     }
+    if (this._shimmerTimer) {
+      this._shimmerTimer.destroy();
+      this._shimmerTimer = null;
+    }
     // Kill any Y tweens on this container
     this.scene.tweens.killTweensOf(this);
 
@@ -164,29 +170,51 @@ export class CardView extends Phaser.GameObjects.Container {
       // Snap anchor from current position before moving
       this._anchorY = this.y;
 
-      // Lift + scale with a snappy spring feel
+      // Initial scale pop: burst to 1.15 then settle into the lift
       this.scene.tweens.add({
         targets: this,
-        y: this._anchorY - 26,
-        scaleX: 1.08,
-        scaleY: 1.08,
-        duration: 180,
-        ease: 'Back.Out',
+        scaleX: 1.15,
+        scaleY: 1.15,
+        duration: 80,
+        ease: 'Quad.Out',
         onComplete: () => {
-          // Gentle perpetual bob
-          this._bobTween = this.scene.tweens.add({
+          // Lift + scale with a snappy spring feel
+          this.scene.tweens.add({
             targets: this,
-            y: this.y - 6,
-            duration: 900 + Math.random() * 200,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.InOut',
+            y: this._anchorY - 26,
+            scaleX: 1.08,
+            scaleY: 1.08,
+            duration: 180,
+            ease: 'Back.Out',
+            onComplete: () => {
+              // Gentle perpetual bob with slight rotation wobble
+              this._bobTween = this.scene.tweens.add({
+                targets: this,
+                y: this.y - 6,
+                angle: 1.5,
+                duration: 900 + Math.random() * 200,
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.InOut',
+              });
+            },
           });
         },
       });
 
-      // Bright selected border with corner dots
-      this._drawSelectBorder();
+      // Bright selected border with corner dots — starts blue
+      this._shimmerPhase = 0;
+      this._drawSelectBorder(this._shimmerPhase);
+
+      // Cycle border color between blue (#88ccff) and teal (#44ffcc) every 600ms
+      this._shimmerTimer = this.scene.time.addEvent({
+        delay: 600,
+        loop: true,
+        callback: () => {
+          this._shimmerPhase = (this._shimmerPhase + 1) % 2;
+          this._drawSelectBorder(this._shimmerPhase);
+        },
+      });
 
       // Pulse the selection glow
       this._pulseTween = this.scene.tweens.add({
@@ -212,12 +240,13 @@ export class CardView extends Phaser.GameObjects.Container {
       this.selectGfx.clear();
       this.selectGfx.setAlpha(1);
 
-      // Return to anchor
+      // Return to anchor, reset rotation
       this.scene.tweens.add({
         targets: this,
         y: this._anchorY,
         scaleX: 1.0,
         scaleY: 1.0,
+        angle: 0,
         duration: 150,
         ease: 'Quad.Out',
       });
@@ -227,23 +256,27 @@ export class CardView extends Phaser.GameObjects.Container {
     }
   }
 
-  private _drawSelectBorder(): void {
+  private _drawSelectBorder(phase = 0): void {
     this.selectGfx.clear();
     this.selectGfx.setAlpha(1);
+
+    // Shimmer: alternate between blue and teal
+    const borderColor = phase === 0 ? COLORS.chipBlue : 0x44ffcc;
+    const accentColor = phase === 0 ? 0x88ccff : 0x99ffee;
 
     const hw = CARD_W / 2;
     const hh = CARD_H / 2;
 
     // Wide outer glow ring
-    this.selectGfx.lineStyle(8, COLORS.chipBlue, 0.22);
+    this.selectGfx.lineStyle(8, borderColor, 0.22);
     this.selectGfx.strokeRoundedRect(-hw - 5, -hh - 5, CARD_W + 10, CARD_H + 10, 9);
 
     // Medium ring
-    this.selectGfx.lineStyle(3, COLORS.chipBlue, 0.7);
+    this.selectGfx.lineStyle(3, borderColor, 0.7);
     this.selectGfx.strokeRoundedRect(-hw - 2, -hh - 2, CARD_W + 4, CARD_H + 4, 8);
 
     // Inner bright ring
-    this.selectGfx.lineStyle(1.5, 0xaaddff, 0.9);
+    this.selectGfx.lineStyle(1.5, accentColor, 0.9);
     this.selectGfx.strokeRoundedRect(-hw, -hh, CARD_W, CARD_H, 6);
 
     // Corner diamond accents
@@ -254,7 +287,7 @@ export class CardView extends Phaser.GameObjects.Container {
       [-hw - 2,  hh + 2],
     ];
     for (const [cx, cy] of corners) {
-      this.selectGfx.fillStyle(0x88ccff, 1);
+      this.selectGfx.fillStyle(accentColor, 1);
       this.selectGfx.fillRect(cx - 3, cy - 1, 6, 2);
       this.selectGfx.fillRect(cx - 1, cy - 3, 2, 6);
     }

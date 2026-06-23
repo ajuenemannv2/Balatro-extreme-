@@ -20,6 +20,14 @@ import { TextureCache } from '../rendering/TextureCache.ts';
 import { numStr } from '../utils/MathUtils.ts';
 import { drawTarotFace, drawPlanetFace, drawSpectralFace } from '../rendering/ConsumableRenderer.ts';
 
+function _glowColorForSource(source: string): number {
+  if (source.includes(':mult') || source.includes(':mult_')) return COLORS.multRed;
+  if (source.includes(':glass') || source.includes(':poly') || source.includes(':xmult')) return 0x9b59b6;
+  if (source.includes(':lucky')) return COLORS.gold;
+  if (source.includes(':holo')) return COLORS.multRed;
+  return COLORS.chipBlue;
+}
+
 export class GameScene extends Phaser.Scene {
   private runState!: RunState;
   private textureCache!: TextureCache;
@@ -57,6 +65,7 @@ export class GameScene extends Phaser.Scene {
   private handsPlayedThisRound = 0;
   private discardsUsedThisRound = 0;
   private _gameWonHandler: ((rs: RunState) => void) | null = null;
+  private _miniGameUsesThisRound: Map<string, number> = new Map();
 
   constructor() {
     super({ key: 'GameScene' });
@@ -88,6 +97,7 @@ export class GameScene extends Phaser.Scene {
     this.currentMult = 0;
     this.handsPlayedThisRound = 0;
     this.discardsUsedThisRound = 0;
+    this._miniGameUsesThisRound = new Map();
 
     this.cameras.main.setBackgroundColor(COLORS.bgHex);
 
@@ -105,6 +115,11 @@ export class GameScene extends Phaser.Scene {
       this.scene.start('WinScene', { runState: this.runState });
     };
     EventBus.on<RunState>('game_won', this._gameWonHandler);
+
+    // Fire blind-start mini-games after a short delay so the scene is visible
+    this.time.delayedCall(600, () => {
+      void this._runMiniGames('on_blind_start', 0);
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -590,40 +605,65 @@ export class GameScene extends Phaser.Scene {
 
   private _layoutHandViews(): void {
     const rs = this.runState;
-
-    this.handViews.forEach(cv => cv.destroy());
-    this.handViews = [];
-
     const cards = rs.hand;
     const count = cards.length;
-    if (count === 0) return;
+
+    // Build a lookup of existing views by card ID so we can reuse them
+    const existingById = new Map(this.handViews.map(cv => [cv.cardData.id, cv]));
+    const handIdSet = new Set(cards.map(c => c.id));
+
+    // Destroy views for cards no longer in hand (played/discarded)
+    this.handViews.forEach(cv => {
+      if (!handIdSet.has(cv.cardData.id)) cv.destroy();
+    });
+
+    if (count === 0) {
+      this.handViews = [];
+      return;
+    }
 
     const totalW = (count - 1) * 85;
     const startX = GAME_WIDTH / 2 - totalW / 2;
+    let newCardIndex = 0;
 
-    cards.forEach((card, i) => {
+    this.handViews = cards.map((card, i) => {
       const targetX = startX + i * 85;
       const targetY = HAND_POSITIONS_Y;
+      const existing = existingById.get(card.id);
 
-      const cv = new CardView(this, GAME_WIDTH - 60, 640, card, this.textureCache);
-      cv.setFaceUp(card.faceUp);
-      cv.setAlpha(0);
-      this.handViews.push(cv);
-
-      this.tweens.add({
-        targets: cv,
-        x: targetX,
-        y: targetY,
-        alpha: 1,
-        duration: ANIM.dealDuration,
-        delay: i * ANIM.dealStagger,
-        ease: 'Quad.Out',
-      });
-
-      cv.on('pointerdown', () => this._onCardClick(cv));
+      if (existing) {
+        // Card already in hand — reposition smoothly without deal animation
+        existing.setAnchorY(targetY);
+        this.tweens.add({
+          targets: existing,
+          x: targetX,
+          y: targetY,
+          duration: 200,
+          ease: 'Quad.Out',
+        });
+        return existing;
+      } else {
+        // New card drawn from deck — fly in with staggered deal animation
+        const cv = new CardView(this, GAME_WIDTH - 60, 640, card, this.textureCache);
+        cv.setFaceUp(card.faceUp);
+        cv.setAlpha(0);
+        this.tweens.add({
+          targets: cv,
+          x: targetX,
+          y: targetY,
+          alpha: 1,
+          duration: ANIM.dealDuration,
+          delay: newCardIndex * ANIM.dealStagger,
+          ease: 'Quad.Out',
+        });
+        cv.on('pointerdown', () => this._onCardClick(cv));
+        newCardIndex++;
+        return cv;
+      }
     });
 
-    this.time.delayedCall(ANIM.dealDuration + cards.length * ANIM.dealStagger + 50, () => {
+    const newCount = newCardIndex;
+    this.time.delayedCall(ANIM.dealDuration + newCount * ANIM.dealStagger + 50, () => {
       this._updateHandTypePreview();
     });
   }
@@ -762,6 +802,14 @@ export class GameScene extends Phaser.Scene {
 
     await this._clearPlayArea();
 
+    // Trigger on_hand_played mini-games
+    await this._runMiniGames('on_hand_played', finalScore);
+
+    // Trigger last-stand mini-game when exactly 1 hand remains
+    if (rs.handsRemaining === 1) {
+      await this._runMiniGames('on_score_milestone', finalScore);
+    }
+
     const won = rs.chipsScored >= rs.chipTarget;
     if (won) {
       await this._onBlindWon();
@@ -809,6 +857,77 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  // ─── Mini-game System ─────────────────────────────────────────────────────
+
+  private async _runMiniGames(trigger: string, lastScore: number): Promise<void> {
+    const rs = this.runState;
+    for (const joker of rs.jokers) {
+      if (!joker.miniGameId || joker.miniGameTrigger !== trigger) continue;
+      if (joker.isDisabled) continue;
+
+      const chance = joker.miniGameChance ?? 1.0;
+      if (Math.random() > chance) continue;
+
+      const maxPerRound = joker.miniGameMaxPerRound;
+      if (maxPerRound !== undefined) {
+        const used = this._miniGameUsesThisRound.get(joker.id) ?? 0;
+        if (used >= maxPerRound) continue;
+        this._miniGameUsesThisRound.set(joker.id, used + 1);
+      }
+
+      const won = await this._launchMiniGame(joker.miniGameId, joker.id, joker.name,
+        joker.miniGameWinDesc ?? 'Bonus!', joker.miniGameLoseDesc ?? 'Penalty!');
+
+      const effect = won
+        ? joker.onMiniGameWin?.(rs, lastScore)
+        : joker.onMiniGameLose?.(rs, lastScore);
+
+      if (!effect) continue;
+
+      if (effect.addChipsScored) {
+        rs.chipsScored += effect.addChipsScored;
+      }
+      if (effect.scaleLastScore !== undefined) {
+        const added = effect.scaleLastScore - lastScore;
+        if (added > 0) rs.chipsScored += added;
+      }
+      if (effect.resetScore) {
+        rs.chipsScored = 0;
+      }
+      if (effect.addHandsRemaining) {
+        rs.handsRemaining = Math.max(0, rs.handsRemaining + effect.addHandsRemaining);
+      }
+      if (effect.addDiscardsRemaining) {
+        rs.discardsRemaining = Math.max(0, rs.discardsRemaining + effect.addDiscardsRemaining);
+      }
+
+      const msg = won
+        ? `${joker.name}: ${joker.miniGameWinDesc ?? 'WIN!'}`
+        : `${joker.name}: ${joker.miniGameLoseDesc ?? 'LOSE!'}`;
+      ScorePopup.spawn(this, GAME_WIDTH / 2, PLAY_AREA_Y - 60, msg,
+        won ? '#44ff88' : '#ff6666', 'sm');
+      this._updateUI();
+
+      await this._delay(400);
+    }
+  }
+
+  private _launchMiniGame(
+    gameId: string,
+    jokerId: string,
+    jokerName: string,
+    winDesc: string,
+    loseDesc: string,
+  ): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      EventBus.once<{ jokerId: string; won: boolean }>('mini_game_result', (data) => {
+        resolve(data.won);
+      });
+      this.scene.launch('MiniGameScene', { gameId, jokerId, jokerName, winDesc, loseDesc });
+      this.scene.bringToTop('MiniGameScene');
+    });
+  }
+
   private async _clearPlayArea(): Promise<void> {
     return new Promise<void>((resolve) => {
       if (this.playAreaViews.length === 0) { resolve(); return; }
@@ -850,18 +969,21 @@ export class GameScene extends Phaser.Scene {
       for (const hint of step.hints) {
         if (hint.type === 'card_glow') {
           const cv = this.playAreaViews.find(v => v.cardData.id === hint.cardId);
-          cv?.glow(COLORS.chipBlue);
+          const glowColor = _glowColorForSource(step.source);
+          cv?.glow(glowColor);
         } else if (hint.type === 'joker_activate') {
           const jv = this.jokerViews.find(v => v.jokerData.instanceId === hint.jokerId);
           jv?.flash();
         } else if (hint.type === 'chip_add' && hint.delta > 0) {
-          ScorePopup.spawn(this, GAME_WIDTH / 2 - 100, PLAY_AREA_Y - 60, `+${numStr(hint.delta)} Chips`, '#4a90d9');
+          const sz = hint.delta >= 50 ? 'lg' : hint.delta >= 20 ? 'md' : 'sm';
+          ScorePopup.spawn(this, GAME_WIDTH / 2 - 100, PLAY_AREA_Y - 60, `+${numStr(hint.delta)} Chips`, '#4a90d9', sz);
         } else if (hint.type === 'mult_add' && hint.delta > 0) {
-          ScorePopup.spawn(this, GAME_WIDTH / 2 + 100, PLAY_AREA_Y - 60, `+${hint.delta} Mult`, '#e74c3c');
+          const sz = hint.delta >= 10 ? 'lg' : hint.delta >= 4 ? 'md' : 'sm';
+          ScorePopup.spawn(this, GAME_WIDTH / 2 + 100, PLAY_AREA_Y - 60, `+${hint.delta} Mult`, '#e74c3c', sz);
         } else if (hint.type === 'mult_mul') {
-          ScorePopup.spawn(this, GAME_WIDTH / 2 + 100, PLAY_AREA_Y - 60, `×${hint.factor} Mult`, '#ff8844');
+          ScorePopup.spawn(this, GAME_WIDTH / 2 + 100, PLAY_AREA_Y - 60, `×${hint.factor} Mult`, '#ff8844', 'lg');
         } else if (hint.type === 'money_add') {
-          ScorePopup.spawn(this, GAME_WIDTH / 2, PLAY_AREA_Y + 50, `+$${hint.delta}`, COLORS.goldHex);
+          ScorePopup.spawn(this, GAME_WIDTH / 2, PLAY_AREA_Y + 50, `+$${hint.delta}`, COLORS.goldHex, 'md');
         }
       }
 

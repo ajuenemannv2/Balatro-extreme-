@@ -8,6 +8,7 @@ import { GameScene } from './scenes/GameScene.ts';
 import { ShopScene } from './scenes/ShopScene.ts';
 import { GameOverScene } from './scenes/GameOverScene.ts';
 import { WinScene } from './scenes/WinScene.ts';
+import { MiniGameScene } from './scenes/MiniGameScene.ts';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -28,6 +29,7 @@ const config: Phaser.Types.Core.GameConfig = {
     ShopScene,
     GameOverScene,
     WinScene,
+    MiniGameScene,
   ],
   render: {
     antialias: false,

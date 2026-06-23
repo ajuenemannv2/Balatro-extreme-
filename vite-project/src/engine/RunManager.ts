@@ -65,6 +65,7 @@ export function createNewRun(seed: string, stakeLevel: number, deckId: string): 
     handsThisRun: 0,
     discountsActive: 0,
     freeRerollsPerShop: 0,
+    lastHandScore: 0,
   };
 
   // Apply deck type
