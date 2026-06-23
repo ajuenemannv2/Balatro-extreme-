@@ -73,14 +73,27 @@ export class JokerView extends Phaser.GameObjects.Container {
   }
 
   flash(): void {
+    // Scale bounce
+    this.scene.tweens.add({
+      targets: this,
+      scaleX: 1.20,
+      scaleY: 1.20,
+      duration: 110,
+      ease: 'Quad.Out',
+      yoyo: true,
+    });
+
+    // Gold flash overlay
     this.flashRect.clear();
-    this.flashRect.fillStyle(COLORS.white, 0.75);
-    this.flashRect.fillRoundedRect(-CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H, 5);
+    this.flashRect.fillStyle(COLORS.gold, 0.65);
+    this.flashRect.fillRoundedRect(-CARD_W / 2 - 3, -CARD_H / 2 - 3, CARD_W + 6, CARD_H + 6, 7);
+    this.flashRect.lineStyle(2, COLORS.gold, 1);
+    this.flashRect.strokeRoundedRect(-CARD_W / 2 - 3, -CARD_H / 2 - 3, CARD_W + 6, CARD_H + 6, 7);
 
     this.scene.tweens.add({
       targets: this.flashRect,
       alpha: 0,
-      duration: ANIM.jokerFlashDuration,
+      duration: ANIM.jokerFlashDuration * 1.5,
       ease: 'Quad.Out',
       onComplete: () => {
         this.flashRect.clear();
