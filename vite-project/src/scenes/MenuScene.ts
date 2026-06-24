@@ -12,10 +12,12 @@ export class MenuScene extends Phaser.Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor(COLORS.bgHex);
-    // First touch unlocks Web Audio + starts music (browsers require user gesture)
+    // Try to start music immediately (works if Audio was already unlocked by a prior gesture)
+    AudioManager.switchTrack('menu').catch(() => {});
+    // First touch: unlock SFX engine + retry music in case it was blocked before first gesture
     this.input.once('pointerdown', () => {
       SFX.unlock();
-      AudioManager.startMusic('menu').catch(() => {});
+      AudioManager.switchTrack('menu').catch(() => {});
     });
 
     // ── Deep radial background ────────────────────────────────────────────────
