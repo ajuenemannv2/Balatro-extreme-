@@ -237,4 +237,125 @@ export const EXTREME_JOKER_DEFS: JokerDefinition[] = [
       return {};
     },
   },
+
+  // ─── 11. COMBO BREAKER ───────────────────────────────────────────────────
+  {
+    id: 'xj_combo',
+    name: 'Combo Breaker',
+    rarity: 'Uncommon',
+    baseCost: 8,
+    sellValue: 4,
+    description: '+5 Mult per consecutive hand without repeating a hand type. Resets on repeat.',
+    effect: (ctx) => {
+      if (ctx.triggerType !== 'independent') return {};
+      return { addMult: (ctx.joker.runtimeCounters.streak ?? 0) * 5 };
+    },
+    onRoundEnd: (rs) => { const j = rs.jokers.find(j => j.id === 'xj_combo'); if (j) j.runtimeCounters.streak = 0; },
+    isEternal: false,
+    isPerishable: false,
+    isRentable: false,
+  },
+
+  // ─── 12. ENTROPY ─────────────────────────────────────────────────────────
+  {
+    id: 'xj_entropy',
+    name: 'Entropy',
+    rarity: 'Uncommon',
+    baseCost: 7,
+    sellValue: 4,
+    description: 'After scoring: if Chips > Mult, +2 Mult; if Mult > Chips, +15 Chips. Auto-balances.',
+    effect: (ctx) => {
+      if (ctx.triggerType !== 'independent') return {};
+      const chips = ctx.scoringCtx.chips;
+      const mult = ctx.scoringCtx.mult;
+      if (chips > mult) return { addMult: 2 };
+      if (mult > chips) return { addChips: 15 };
+      return {};
+    },
+    isEternal: false,
+    isPerishable: false,
+    isRentable: false,
+  },
+
+  // ─── 13. THE GAMBLER ─────────────────────────────────────────────────────
+  {
+    id: 'xj_gambler',
+    name: 'The Gambler',
+    rarity: 'Common',
+    baseCost: 4,
+    sellValue: 2,
+    description: '50% chance: +15 Mult this hand. 50% chance: -5 Mult (min 1).',
+    effect: (ctx) => {
+      if (ctx.triggerType !== 'independent') return {};
+      if (Math.random() < 0.5) return { addMult: 15 };
+      return { addMult: Math.max(1 - (ctx.scoringCtx.mult), -5) };
+    },
+    isEternal: false,
+    isPerishable: false,
+    isRentable: false,
+  },
+
+  // ─── 14. THE HOARDER ─────────────────────────────────────────────────────
+  {
+    id: 'xj_hoarder',
+    name: 'The Hoarder',
+    rarity: 'Rare',
+    baseCost: 9,
+    sellValue: 5,
+    description: 'On buy: +$1 sell value to all other Jokers. +2 Mult.',
+    effect: (ctx) => {
+      if (ctx.triggerType !== 'independent') return {};
+      return { addMult: 2 };
+    },
+    onBuy: (rs) => {
+      for (const j of rs.jokers) {
+        if (j.id !== 'xj_hoarder') j.sellValue += 1;
+      }
+    },
+    isEternal: false,
+    isPerishable: false,
+    isRentable: false,
+  },
+
+  // ─── 15. MIRROR IMAGE ────────────────────────────────────────────────────
+  {
+    id: 'xj_mirror',
+    name: 'Mirror Image',
+    rarity: 'Rare',
+    baseCost: 10,
+    sellValue: 5,
+    description: 'The rightmost other Joker\'s independent effect fires a second time.',
+    effect: (ctx) => {
+      if (ctx.triggerType !== 'independent') return {};
+      const others = ctx.runState.jokers.filter(j => j.instanceId !== ctx.joker.instanceId && !j.isDisabled && !j.perCard);
+      if (others.length === 0) return {};
+      const rightmost = others[others.length - 1];
+      const mirrorCtx = { ...ctx, joker: rightmost };
+      return rightmost.effect(mirrorCtx);
+    },
+    isEternal: false,
+    isPerishable: false,
+    isRentable: false,
+  },
+
+  // ─── 16. CATALYST ────────────────────────────────────────────────────────
+  {
+    id: 'xj_catalyst',
+    name: 'Catalyst',
+    rarity: 'Legendary',
+    baseCost: 18,
+    sellValue: 9,
+    description: 'Crystal-enhanced cards score their play-count bonus twice.',
+    effect: (ctx) => {
+      if (ctx.triggerType !== 'independent') return {};
+      // Find crystal cards that scored and add their bonus again
+      const crystalBonus = ctx.scoringCtx.scoredCards
+        .filter(c => c.enhancement === 'crystal' && !c.isDebuffed)
+        .reduce((sum, c) => sum + ((c.timesPlayed ?? 1) - 1), 0);
+      return crystalBonus > 0 ? { addMult: crystalBonus } : {};
+    },
+    isEternal: false,
+    isPerishable: false,
+    isRentable: false,
+  },
 ];

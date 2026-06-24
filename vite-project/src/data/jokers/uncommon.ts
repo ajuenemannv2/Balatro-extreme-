@@ -9,6 +9,7 @@ export const UNCOMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 8,
     sellValue: 4,
     description: 'Each played card with a random suit gives ×1.5 Mult when scored. Suit changes each round',
+    perCard: true,
     effect: (ctx) => {
       const targetSuit = ctx.joker.runtimeCounters.suit !== undefined
         ? (['Spades', 'Hearts', 'Clubs', 'Diamonds'] as const)[ctx.joker.runtimeCounters.suit]
@@ -60,6 +61,7 @@ export const UNCOMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 8,
     sellValue: 4,
     description: 'Each played 10 or 4 gives +10 Chips and +4 Mult when scored',
+    perCard: true,
     effect: (ctx) =>
       ctx.currentCard?.rank === '10' || ctx.currentCard?.rank === '4'
         ? { addChips: 10, addMult: 4 }
@@ -76,10 +78,7 @@ export const UNCOMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 6,
     sellValue: 3,
     description: 'Retrigger all cards for the next 10 hands, then self-destructs',
-    effect: (ctx) => {
-      const handsLeft = ctx.joker.runtimeCounters.hands ?? 10;
-      return handsLeft > 0 ? { retrigger: true } : {};
-    },
+    effect: () => ({}),
     isEternal: false,
     isPerishable: true,
     perishUsesLeft: 10,
@@ -119,6 +118,7 @@ export const UNCOMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 5,
     sellValue: 3,
     description: 'Played face cards give +5 Mult when scored',
+    perCard: true,
     effect: (ctx) =>
       ['J', 'Q', 'K'].includes(ctx.currentCard?.rank ?? '')
         ? { addMult: 5 }
@@ -150,6 +150,7 @@ export const UNCOMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 6,
     sellValue: 3,
     description: 'Played Gold cards earn $4 when scored',
+    perCard: true,
     effect: (ctx) =>
       ctx.currentCard?.enhancement === 'gold' ? { addMoney: 4 } : {},
     isEternal: false,
@@ -191,10 +192,7 @@ export const UNCOMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 6,
     sellValue: 3,
     description: 'Retrigger all played face cards',
-    effect: (ctx) =>
-      ['J', 'Q', 'K'].includes(ctx.currentCard?.rank ?? '')
-        ? { retrigger: true }
-        : {},
+    effect: () => ({}),
     isEternal: false,
     isPerishable: false,
     isRentable: false,
@@ -285,15 +283,7 @@ export const UNCOMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 4,
     sellValue: 2,
     description: 'Retrigger first played card 2 additional times',
-    effect: (ctx) => {
-      if (
-        ctx.currentCard &&
-        ctx.scoringCtx.scoredCards[0]?.id === ctx.currentCard.id
-      ) {
-        return { retrigger: true };
-      }
-      return {};
-    },
+    effect: () => ({}),
     isEternal: false,
     isPerishable: false,
     isRentable: false,
@@ -306,6 +296,7 @@ export const UNCOMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 7,
     sellValue: 4,
     description: 'Played Diamond cards earn $1 when scored',
+    perCard: true,
     effect: (ctx) =>
       ctx.currentCard?.suit === 'Diamonds' ? { addMoney: 1 } : {},
     isEternal: false,
@@ -320,6 +311,7 @@ export const UNCOMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 7,
     sellValue: 4,
     description: '1 in 2 chance for played Heart cards to give ×1.5 Mult when scored',
+    perCard: true,
     effect: (ctx) =>
       ctx.currentCard?.suit === 'Hearts' && Math.random() < 0.5
         ? { mulMult: 1.5 }
@@ -336,6 +328,7 @@ export const UNCOMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 7,
     sellValue: 4,
     description: 'Played Spade cards give +50 Chips when scored',
+    perCard: true,
     effect: (ctx) =>
       ctx.currentCard?.suit === 'Spades' ? { addChips: 50 } : {},
     isEternal: false,
@@ -350,6 +343,7 @@ export const UNCOMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 7,
     sellValue: 4,
     description: 'Played Club cards give +7 Mult when scored',
+    perCard: true,
     effect: (ctx) =>
       ctx.currentCard?.suit === 'Clubs' ? { addMult: 7 } : {},
     isEternal: false,
@@ -440,6 +434,7 @@ export const UNCOMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 8,
     sellValue: 4,
     description: 'This Joker gains +8 Chips each time a played 2 is scored',
+    perCard: true,
     effect: (ctx) => {
       if (ctx.currentCard?.rank === '2') {
         ctx.joker.runtimeCounters.chips =
@@ -478,6 +473,7 @@ export const UNCOMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 6,
     sellValue: 3,
     description: 'Each played card that matches the current rank and suit gives ×2 Mult. Card changes each round',
+    perCard: true,
     effect: (ctx) => {
       const targetRank = ctx.joker.runtimeCounters.rank ?? 0;
       const targetSuit = ctx.joker.runtimeCounters.suit ?? 0;

@@ -102,6 +102,35 @@ export function scoreHand(
       }
     }
 
+    // Crystal: +X mult where X = times played this run
+    if (card.enhancement === 'crystal') {
+      const plays = card.timesPlayed ?? 0;
+      if (plays > 0) emitStep(ctx, `${source}:crystal`, {
+        addMult: plays,
+        hints: [{ type: 'mult_add', delta: plays }],
+      });
+      card.timesPlayed = plays + 1;
+    }
+
+    // Bronze: +10 chips per level of current hand type
+    if (card.enhancement === 'bronze') {
+      const level = runState.handLevels[handType] ?? 1;
+      const bonus = level * 10;
+      emitStep(ctx, `${source}:bronze`, {
+        addChips: bonus,
+        hints: [{ type: 'chip_add', delta: bonus }],
+      });
+    }
+
+    // Ephemeral: ×3 mult, permanently destroy card after this hand
+    if (card.enhancement === 'ephemeral') {
+      emitStep(ctx, `${source}:ephemeral`, {
+        mulMult: 3,
+        hints: [{ type: 'mult_mul', factor: 3 }],
+      });
+      destroyedCardIds.push(card.id);
+    }
+
     // Edition chips
     if (card.edition === 'foil') emitStep(ctx, `${source}:foil`, {
       addChips: 50,
@@ -119,6 +148,7 @@ export function scoreHand(
     // Per-card joker triggers
     for (const joker of runState.jokers) {
       if (joker.isDisabled) continue;
+      if (!joker.perCard) continue;
       const jokerCtx = {
         joker,
         scoringCtx: ctx,
@@ -150,6 +180,23 @@ export function scoreHand(
       scoreCard(card, true);
     }
 
+    // Joker-triggered retriggers (Dusk, Hack, Seltzer, Sock & Buskin, Hanging Chad)
+    if (!isRetrigger) {
+      const hasDusk = runState.jokers.some(j => !j.isDisabled && j.id === 'j_dusk' && runState.handsRemaining === 1);
+      const seltzerJ = runState.jokers.find(j => !j.isDisabled && j.id === 'j_seltzer');
+      const hasSeltzer = !!seltzerJ && (seltzerJ.runtimeCounters.hands ?? 10) > 0;
+      const hasHack = runState.jokers.some(j => !j.isDisabled && j.id === 'j_hack') && ['2','3','4','5'].includes(card.rank ?? '');
+      const hasSockBuskin = runState.jokers.some(j => !j.isDisabled && j.id === 'j_sock_and_buskin') && ['J','Q','K'].includes(card.rank ?? '');
+      const hasHangingChad = runState.jokers.some(j => !j.isDisabled && j.id === 'j_hanging_chad') && card === scoredCards[0];
+
+      if (hasDusk || hasSeltzer || hasHack || hasSockBuskin || hasHangingChad) {
+        scoreCard(card, true);
+      }
+      if (hasHangingChad) {
+        scoreCard(card, true); // second extra retrigger
+      }
+    }
+
     // Mime joker: retrigger held-card abilities
     // (handled separately below)
   }
@@ -157,6 +204,16 @@ export function scoreHand(
   // Score each scored card
   for (const card of scoredCards) {
     scoreCard(card);
+  }
+
+  // Decrement Seltzer use count
+  const seltzerJoker = runState.jokers.find(j => !j.isDisabled && j.id === 'j_seltzer');
+  if (seltzerJoker) {
+    seltzerJoker.runtimeCounters.hands = (seltzerJoker.runtimeCounters.hands ?? 10) - 1;
+    if ((seltzerJoker.runtimeCounters.hands ?? 0) <= 0) {
+      const idx = runState.jokers.indexOf(seltzerJoker);
+      if (idx >= 0) runState.jokers.splice(idx, 1);
+    }
   }
 
   // Held card effects (not played)
@@ -194,6 +251,7 @@ export function scoreHand(
   // Joker independent effects (left to right)
   for (const joker of runState.jokers) {
     if (joker.isDisabled) continue;
+    if (joker.perCard) continue;
     const jokerCtx = {
       joker,
       scoringCtx: ctx,

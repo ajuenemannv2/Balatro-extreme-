@@ -133,6 +133,26 @@ export class GameScene extends Phaser.Scene {
     this.time.delayedCall(600, () => {
       void this._runMiniGames('on_blind_start', 0);
     });
+
+    this._callBlindStartHooks();
+  }
+
+  private _callBlindStartHooks(): void {
+    for (const j of this.runState.jokers) {
+      if (!j.isDisabled) j.onBlindStart?.(this.runState);
+    }
+  }
+
+  private _callRoundEndHooks(): void {
+    for (const j of this.runState.jokers) {
+      if (!j.isDisabled) j.onRoundEnd?.(this.runState);
+    }
+  }
+
+  private _callDiscardHooks(discarded: import('../types/Card.ts').PlayingCard[]): void {
+    for (const j of this.runState.jokers) {
+      if (!j.isDisabled) j.onDiscard?.(this.runState, discarded);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1091,9 +1111,7 @@ export class GameScene extends Phaser.Scene {
     this.discardBtn.setEnabled(false);
     AudioManager.playSFX('discard');
 
-    for (const j of rs.jokers) {
-      j.onDiscard?.(rs, selected.map(cv => cv.cardData));
-    }
+    this._callDiscardHooks(selected.map(cv => cv.cardData));
 
     await new Promise<void>((resolve) => {
       let done = 0;
@@ -1182,9 +1200,7 @@ export class GameScene extends Phaser.Scene {
 
     applyDeferredEffects(rs);
 
-    for (const j of rs.jokers) {
-      j.onRoundEnd?.(rs);
-    }
+    this._callRoundEndHooks();
 
     SFX.blindWon();
     AudioManager.playSFX('win_round');

@@ -4,6 +4,7 @@ import { drawCardFace, drawCardBack } from '../rendering/CardRenderer.ts';
 import { TextureCache } from '../rendering/TextureCache.ts';
 import { CARD_W, CARD_H, ANIM, DEPTH } from '../config.ts';
 import { SFX } from '../utils/SoundEngine.ts';
+import { showTooltip, hideTooltip } from './TooltipView.ts';
 
 function cardFaceKey(card: PlayingCard): string {
   return `card_face_${card.rank ?? 'stone'}_${card.suit ?? 'none'}_${card.enhancement}_${card.isDebuffed ? 'd' : 'n'}`;
@@ -70,6 +71,34 @@ export class CardView extends Phaser.GameObjects.Container {
         this.shadowGfx.fillStyle(0x000000, 0.18);
         this.shadowGfx.fillRoundedRect(-CARD_W / 2 + 6, -CARD_H / 2 + 10, CARD_W, CARD_H, 6);
       }
+      const card = this.cardData;
+      const parts: string[] = [];
+      if (card.enhancement && card.enhancement !== 'none') {
+        const enhDesc: Record<string, string> = {
+          bonus: '+30 Chips', mult: '+4 Mult', glass: '×2 Mult, 1-in-4 destroy',
+          steel: '×1.5 Mult when held', stone: '50 Chips, always scores',
+          gold: '+$3 at round end', lucky: '1-in-5 +20 Mult, 1-in-15 +$20',
+          wild: 'Counts as any suit', crystal: '+X Mult (X = times played)',
+          bronze: '+10 Chips per hand level', ephemeral: '×3 Mult, removed after blind',
+        };
+        parts.push(`${card.enhancement.charAt(0).toUpperCase() + card.enhancement.slice(1)}: ${enhDesc[card.enhancement] ?? ''}`);
+      }
+      if (card.edition && card.edition !== 'base') {
+        const edDesc: Record<string, string> = {
+          foil: '+50 Chips', holographic: '+10 Mult', polychrome: '×1.5 Mult', negative: '+1 Joker slot',
+        };
+        parts.push(`${card.edition.charAt(0).toUpperCase() + card.edition.slice(1)}: ${edDesc[card.edition] ?? ''}`);
+      }
+      if (card.seal && card.seal !== 'none') {
+        const sealDesc: Record<string, string> = {
+          gold: '+$3 at round end', red: 'Retrigger when scored',
+          blue: 'Create Planet card at round end', purple: 'Create Tarot when discarded',
+        };
+        parts.push(`${card.seal.charAt(0).toUpperCase() + card.seal.slice(1)} Seal: ${sealDesc[card.seal] ?? ''}`);
+      }
+      const title = `${card.rank} of ${card.suit}`;
+      const body = parts.join('\n');
+      showTooltip(this.scene, this.x, this.y, title, body);
     });
 
     this.on('pointerout', () => {
@@ -83,6 +112,7 @@ export class CardView extends Phaser.GameObjects.Container {
         });
         this._resetShadow();
       }
+      hideTooltip();
     });
 
     scene.add.existing(this);

@@ -22,6 +22,7 @@ export const COMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 5,
     sellValue: 3,
     description: 'Played cards with {Diamond} suit give +3 Mult when scored',
+    perCard: true,
     effect: (ctx) => ctx.currentCard?.suit === 'Diamonds' ? { addMult: 3 } : {},
     isEternal: false,
     isPerishable: false,
@@ -35,6 +36,7 @@ export const COMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 5,
     sellValue: 3,
     description: 'Played cards with {Heart} suit give +3 Mult when scored',
+    perCard: true,
     effect: (ctx) => ctx.currentCard?.suit === 'Hearts' ? { addMult: 3 } : {},
     isEternal: false,
     isPerishable: false,
@@ -48,6 +50,7 @@ export const COMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 5,
     sellValue: 3,
     description: 'Played cards with {Spade} suit give +3 Mult when scored',
+    perCard: true,
     effect: (ctx) => ctx.currentCard?.suit === 'Spades' ? { addMult: 3 } : {},
     isEternal: false,
     isPerishable: false,
@@ -61,6 +64,7 @@ export const COMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 5,
     sellValue: 3,
     description: 'Played cards with {Club} suit give +3 Mult when scored',
+    perCard: true,
     effect: (ctx) => ctx.currentCard?.suit === 'Clubs' ? { addMult: 3 } : {},
     isEternal: false,
     isPerishable: false,
@@ -398,7 +402,7 @@ export const COMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 5,
     sellValue: 3,
     description: 'Retrigger all played cards on final hand of the round',
-    effect: (ctx) => ctx.runState.handsRemaining === 1 ? { retrigger: true } : {},
+    effect: () => ({}),
     isEternal: false,
     isPerishable: false,
     isRentable: false,
@@ -456,6 +460,7 @@ export const COMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 8,
     sellValue: 4,
     description: 'Each played Ace, 2, 3, 5, or 8 gives +8 Mult when scored',
+    perCard: true,
     effect: (ctx) =>
       ['A', '2', '3', '5', '8'].includes(ctx.currentCard?.rank ?? '')
         ? { addMult: 8 }
@@ -492,6 +497,7 @@ export const COMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 4,
     sellValue: 2,
     description: 'Played face cards (J, Q, K) give +30 Chips when scored',
+    perCard: true,
     effect: (ctx) =>
       ['J', 'Q', 'K'].includes(ctx.currentCard?.rank ?? '')
         ? { addChips: 30 }
@@ -520,11 +526,10 @@ export const COMMON_JOKER_DEFS: JokerDefinition[] = [
     rarity: 'Common',
     baseCost: 4,
     sellValue: 2,
-    description: 'Earn $2 per discard if no discards used by end of round',
+    description: 'Earn $2 per discard not used this round, paid at round end',
     effect: () => ({}),
     onRoundEnd: (rs: RunState) => {
-      // discardsRemaining equals initial discard count if none were used
-      if (rs.discardsRemaining >= 3) rs.money += 2 * rs.discardsRemaining;
+      if (rs.discardsRemaining > 0) rs.money += rs.discardsRemaining * 2;
     },
     isEternal: false,
     isPerishable: false,
@@ -538,10 +543,7 @@ export const COMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 6,
     sellValue: 3,
     description: 'Retrigger each played 2, 3, 4, or 5',
-    effect: (ctx) =>
-      ['2', '3', '4', '5'].includes(ctx.currentCard?.rank ?? '')
-        ? { retrigger: true }
-        : {},
+    effect: () => ({}),
     isEternal: false,
     isPerishable: false,
     isRentable: false,
@@ -586,6 +588,7 @@ export const COMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 4,
     sellValue: 2,
     description: 'Played cards with even rank (10, 8, 6, 4, 2) give +4 Mult when scored',
+    perCard: true,
     effect: (ctx) =>
       ['2', '4', '6', '8', '10'].includes(ctx.currentCard?.rank ?? '')
         ? { addMult: 4 }
@@ -602,6 +605,7 @@ export const COMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 4,
     sellValue: 2,
     description: 'Played cards with odd rank (A, 9, 7, 5, 3) give +31 Chips when scored',
+    perCard: true,
     effect: (ctx) =>
       ['A', '3', '5', '7', '9'].includes(ctx.currentCard?.rank ?? '')
         ? { addChips: 31 }
@@ -618,6 +622,7 @@ export const COMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 4,
     sellValue: 2,
     description: 'Played Aces give +20 Chips and +4 Mult when scored',
+    perCard: true,
     effect: (ctx) =>
       ctx.currentCard?.rank === 'A' ? { addChips: 20, addMult: 4 } : {},
     isEternal: false,
@@ -632,6 +637,7 @@ export const COMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 4,
     sellValue: 2,
     description: 'Played face cards have a 1 in 2 chance to give $1 when scored',
+    perCard: true,
     effect: (ctx) => {
       if (
         ['J', 'Q', 'K'].includes(ctx.currentCard?.rank ?? '') &&
@@ -856,6 +862,7 @@ export const COMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 5,
     sellValue: 3,
     description: 'Each played card permanently gains +5 Chips when scored',
+    perCard: true,
     effect: (ctx) => {
       if (ctx.currentCard) ctx.currentCard.baseChips += 5;
       return {};
@@ -1086,6 +1093,7 @@ export const COMMON_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 5,
     sellValue: 3,
     description: 'First played face card each round gives ×2 Mult when scored',
+    perCard: true,
     effect: (ctx) => {
       if (
         ['J', 'Q', 'K'].includes(ctx.currentCard?.rank ?? '') &&
@@ -1202,11 +1210,6 @@ export const COMMON_JOKER_DEFS: JokerDefinition[] = [
     sellValue: 3,
     description: 'Earn an extra $1 of interest for every $5 you have at end of round',
     effect: () => ({}),
-    onRoundEnd: (rs: RunState) => {
-      if (rs.money > 0) {
-        rs.money += Math.floor(rs.money / 5);
-      }
-    },
     isEternal: false,
     isPerishable: false,
     isRentable: false,

@@ -11,7 +11,6 @@ export interface JokerEffectResult {
   addMult?: number;
   mulMult?: number;
   addMoney?: number;
-  retrigger?: boolean;
   addHandsRemaining?: number;
   addDiscardsRemaining?: number;
   addChipsScored?: number;
@@ -51,11 +50,13 @@ export interface JokerDefinition {
   baseCost: number;
   sellValue: number;
   description: string;
+  perCard?: boolean;
   effect: (ctx: JokerContext) => JokerEffectResult;
   onBuy?: (runState: RunState) => void;
   onSell?: (runState: RunState) => void;
   onRoundEnd?: (runState: RunState) => void;
   onDiscard?: (runState: RunState, discarded: PlayingCard[]) => void;
+  onBlindStart?: (runState: RunState) => void;
   isEternal: boolean;
   isPerishable: boolean;
   perishUsesLeft?: number;

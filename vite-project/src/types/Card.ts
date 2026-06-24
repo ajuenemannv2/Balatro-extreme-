@@ -1,6 +1,6 @@
 export type Rank = '2'|'3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'J'|'Q'|'K'|'A';
 export type Suit = 'Spades'|'Hearts'|'Clubs'|'Diamonds';
-export type Enhancement = 'none'|'bonus'|'mult'|'wild'|'glass'|'steel'|'stone'|'gold'|'lucky';
+export type Enhancement = 'none'|'bonus'|'mult'|'wild'|'glass'|'steel'|'stone'|'gold'|'lucky'|'crystal'|'bronze'|'ephemeral';
 export type Edition = 'base'|'foil'|'holographic'|'polychrome'|'negative';
 export type Seal = 'none'|'gold'|'red'|'blue'|'purple';
 
@@ -14,6 +14,7 @@ export interface PlayingCard {
   seal: Seal;
   isDebuffed: boolean;
   faceUp: boolean;
+  timesPlayed?: number;
 }
 
 export function rankChips(rank: Rank): number {
