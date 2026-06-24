@@ -123,6 +123,26 @@ function generateAppIcon(): void {
 }
 
 generateAppIcon();
+
+// iOS Safari reports wrong innerHeight when browser chrome is visible.
+// Use visualViewport when available to get the real drawable height.
+function fixViewportHeight(): void {
+  const h = (window.visualViewport?.height ?? window.innerHeight);
+  const w = (window.visualViewport?.width ?? window.innerWidth);
+  const el = document.getElementById('game-container');
+  if (el) {
+    el.style.width = w + 'px';
+    el.style.height = h + 'px';
+  }
+  document.body.style.width = w + 'px';
+  document.body.style.height = h + 'px';
+}
+fixViewportHeight();
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', fixViewportHeight);
+} else {
+  window.addEventListener('resize', fixViewportHeight);
+}
 import { BootScene } from './scenes/BootScene.ts';
 import { MenuScene } from './scenes/MenuScene.ts';
 import { RunSelectScene } from './scenes/RunSelectScene.ts';
