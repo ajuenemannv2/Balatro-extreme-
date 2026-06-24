@@ -24,6 +24,7 @@ export const LEGENDARY_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 20,
     sellValue: 10,
     description: 'Played Kings and Queens each give ×2 Mult when scored',
+    perCard: true,
     effect: (ctx) =>
       ctx.currentCard?.rank === 'K' || ctx.currentCard?.rank === 'Q'
         ? { mulMult: 2 }
