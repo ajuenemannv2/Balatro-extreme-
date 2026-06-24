@@ -197,6 +197,7 @@ export const RARE_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 6,
     sellValue: 3,
     description: '+3 Mult on the highest scoring card played',
+    perCard: true,
     effect: (ctx) => {
       const scored = ctx.scoringCtx.scoredCards;
       if (scored.length === 0 || !ctx.currentCard) return {};
@@ -217,6 +218,7 @@ export const RARE_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 9,
     sellValue: 5,
     description: 'Played Kings and Queens each give ×2 Mult when scored',
+    perCard: true,
     effect: (ctx) =>
       ctx.currentCard?.rank === 'K' || ctx.currentCard?.rank === 'Q'
         ? { mulMult: 2 }
@@ -343,6 +345,7 @@ export const RARE_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 6,
     sellValue: 3,
     description: 'First played face card each hand gives ×2 Mult when scored',
+    perCard: true,
     effect: (ctx) => {
       if (
         ['J', 'Q', 'K'].includes(ctx.currentCard?.rank ?? '') &&
@@ -379,6 +382,7 @@ export const RARE_JOKER_DEFS: JokerDefinition[] = [
     baseCost: 5,
     sellValue: 3,
     description: '+20 Mult for each Lucky card trigger',
+    perCard: true,
     effect: (ctx) =>
       ctx.currentCard?.enhancement === 'lucky'
         ? { addMult: 20 }
