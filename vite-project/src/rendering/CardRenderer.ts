@@ -74,6 +74,24 @@ function buildEnhancementGradient(
       g.addColorStop(1, '#c8f0d0');
       return g;
     }
+    case 'crystal': {
+      const g = ctx.createLinearGradient(0, 0, W, H);
+      g.addColorStop(0, '#e8f8ff');
+      g.addColorStop(1, '#b8e8ff');
+      return g;
+    }
+    case 'bronze': {
+      const g = ctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, '#f5e8d0');
+      g.addColorStop(1, '#d4a875');
+      return g;
+    }
+    case 'ephemeral': {
+      const g = ctx.createLinearGradient(0, 0, W, H);
+      g.addColorStop(0, '#f4e8ff');
+      g.addColorStop(1, '#e0c0f0');
+      return g;
+    }
     default: {
       // Standard cream card — warm gradient
       const g = ctx.createLinearGradient(0, 0, 0, H);
@@ -238,6 +256,41 @@ export function drawCardFace(
     ctx.fillStyle = multGrad;
     ctx.fillRect(0, 0, W, H);
     ctx.restore();
+  } else if (enhancement === 'crystal') {
+    roundedRect(ctx, 0, 0, W, H, CARD_RADIUS);
+    ctx.save();
+    ctx.clip();
+    ctx.globalAlpha = 0.22;
+    const crystalGrad = ctx.createLinearGradient(0, 0, W, H);
+    crystalGrad.addColorStop(0, 'rgba(100,200,255,0)');
+    crystalGrad.addColorStop(0.5, 'rgba(150,220,255,0.7)');
+    crystalGrad.addColorStop(1, 'rgba(100,200,255,0)');
+    ctx.fillStyle = crystalGrad;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  } else if (enhancement === 'bronze') {
+    roundedRect(ctx, 0, 0, W, H, CARD_RADIUS);
+    ctx.save();
+    ctx.clip();
+    ctx.globalAlpha = 0.25;
+    const bronzeGrad = ctx.createLinearGradient(0, 0, W * 1.2, H * 0.6);
+    bronzeGrad.addColorStop(0, 'rgba(180,100,30,0)');
+    bronzeGrad.addColorStop(0.5, 'rgba(210,140,50,0.9)');
+    bronzeGrad.addColorStop(1, 'rgba(180,100,30,0)');
+    ctx.fillStyle = bronzeGrad;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  } else if (enhancement === 'ephemeral') {
+    roundedRect(ctx, 0, 0, W, H, CARD_RADIUS);
+    ctx.save();
+    ctx.clip();
+    ctx.globalAlpha = 0.22;
+    const ephGrad = ctx.createRadialGradient(W * 0.5, H * 0.5, 0, W * 0.5, H * 0.5, W * 0.7);
+    ephGrad.addColorStop(0, 'rgba(200,100,220,0.7)');
+    ephGrad.addColorStop(1, 'rgba(200,100,220,0)');
+    ctx.fillStyle = ephGrad;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
   }
 
   // ── Card border ──────────────────────────────────────────────────────────────
@@ -275,7 +328,7 @@ export function drawCardFace(
 
   // Rank text (top-left)
   ctx.fillStyle = suitColor;
-  ctx.font = `bold 14px monospace`;
+  ctx.font = 'bold 14px Nunito, monospace';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   // Slight text shadow for depth
@@ -305,7 +358,7 @@ export function drawCardFace(
   ctx.restore();
 
   ctx.fillStyle = suitColor;
-  ctx.font = `bold 14px monospace`;
+  ctx.font = 'bold 14px Nunito, monospace';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.save();
@@ -537,7 +590,7 @@ function drawFaceCard(
 
   // Large rank letter — styled
   ctx.fillStyle = suitColor;
-  ctx.font = `bold 38px monospace`;
+  ctx.font = 'bold 38px Nunito, monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
@@ -631,7 +684,7 @@ function drawStoneContent(
 
   // "STONE" tiny text
   ctx.fillStyle = '#aaa098';
-  ctx.font = 'bold 8px monospace';
+  ctx.font = 'bold 11px Nunito, monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('STONE', cx, cy);
@@ -646,29 +699,32 @@ function drawEnhancementBadge(
   if (enhancement === 'none' || enhancement === 'wild') return;
 
   const labels: Partial<Record<Enhancement, { text: string; color: string }>> = {
-    bonus:  { text: 'BONUS', color: '#b8a000' },
-    mult:   { text: 'MULT',  color: '#cc2222' },
-    glass:  { text: 'GLASS', color: '#2266cc' },
-    steel:  { text: 'STEEL', color: '#666688' },
-    stone:  { text: '',      color: '#888888' },
-    gold:   { text: 'GOLD',  color: '#cc8800' },
-    lucky:  { text: 'LUCKY', color: '#228844' },
+    bonus:     { text: 'BONUS', color: '#c8b000' },
+    mult:      { text: 'MULT',  color: '#dd2222' },
+    glass:     { text: 'GLASS', color: '#2277dd' },
+    steel:     { text: 'STEEL', color: '#7777aa' },
+    stone:     { text: '',      color: '#888888' },
+    gold:      { text: 'GOLD',  color: '#dd9900' },
+    lucky:     { text: 'LUCKY', color: '#228844' },
+    crystal:   { text: 'CRYS',  color: '#2299cc' },
+    bronze:    { text: 'BRNZ',  color: '#aa6600' },
+    ephemeral: { text: 'EPHE',  color: '#aa33aa' },
   };
   const info = labels[enhancement];
   if (!info || !info.text) return;
 
-  const badgeW = 32;
-  const badgeH = 10;
+  const badgeW = 40;
+  const badgeH = 14;
   const bx = W / 2 - badgeW / 2;
-  const by = H - 13;
+  const by = H - 16;
 
   // Badge background
-  roundedRect(ctx, bx, by, badgeW, badgeH, 3);
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  roundedRect(ctx, bx, by, badgeW, badgeH, 4);
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
   ctx.fill();
 
   ctx.fillStyle = info.color;
-  ctx.font = 'bold 7px monospace';
+  ctx.font = 'bold 11px Nunito, monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(info.text, W / 2, by + badgeH / 2);

@@ -363,7 +363,7 @@ export function drawJokerFace(
   // Name at bottom
   const nameAreaY = H - 18;
   ctx.fillStyle = '#ffffff';
-  ctx.font = '8px monospace';
+  ctx.font = 'bold 11px Nunito, monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 

@@ -48,7 +48,7 @@ function drawNameAtBottom(
   maxWidth: number
 ): void {
   ctx.fillStyle = color;
-  ctx.font = '8px monospace';
+  ctx.font = 'bold 11px Nunito, monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'bottom';
 
@@ -464,7 +464,7 @@ export function drawTarotFace(
   const roman = toRoman(arcanaNum);
 
   ctx.fillStyle = '#c9a227';
-  ctx.font = 'bold 10px monospace';
+  ctx.font = 'bold 11px Nunito, monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   ctx.fillText(roman, W / 2, 6);

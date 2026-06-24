@@ -116,14 +116,14 @@ export class GameOverScene extends Phaser.Scene {
       this.add.text(GAME_WIDTH / 2, 560, 'Your Jokers:', {
         fontFamily: FONT,
         fontSize: '14px',
-        color: '#666666',
+        color: '#888888',
       }).setOrigin(0.5);
 
       const jokerStr = rs.jokers.map(j => j.name).join('  ·  ');
       this.add.text(GAME_WIDTH / 2, 582, jokerStr, {
         fontFamily: FONT,
-        fontSize: '12px',
-        color: '#555555',
+        fontSize: '13px',
+        color: '#aaaaaa',
         wordWrap: { width: 800 },
         align: 'center',
       }).setOrigin(0.5);

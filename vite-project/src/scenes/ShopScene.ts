@@ -286,7 +286,7 @@ export class ShopScene extends Phaser.Scene {
 
     if (desc) {
       const descText = this.add.text(artX, artY + CARD_H / 2 + 30, desc, {
-        fontFamily: FONT, fontSize: '10px', color: '#aaaaaa',
+        fontFamily: FONT, fontSize: '12px', color: '#cccccc',
         wordWrap: { width: w - 16 }, align: 'center',
       }).setOrigin(0.5, 0);
       container.add(descText);

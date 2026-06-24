@@ -59,7 +59,7 @@ export const ANIM = {
   jokerFlashDuration: 300,
 } as const;
 
-export const FONT = 'monospace';
+export const FONT = 'Nunito, monospace';
 
 export const HAND_POSITIONS_Y = 590;
 export const JOKER_ROW_Y = 120;

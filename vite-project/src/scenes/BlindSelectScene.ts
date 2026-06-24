@@ -250,8 +250,8 @@ export class BlindSelectScene extends Phaser.Scene {
         if (desc) {
           this.add.text(cx, cardY + 215, desc, {
             fontFamily: FONT,
-            fontSize: '12px',
-            color: '#ff9999',
+            fontSize: '13px',
+            color: '#ffcccc',
             wordWrap: { width: cardW - 28 },
             align: 'center',
           }).setOrigin(0.5, 0).setDepth(22);
@@ -348,7 +348,7 @@ export class BlindSelectScene extends Phaser.Scene {
 
         this.add.text(jx, stripY + 22, j.name, {
           fontFamily: FONT,
-          fontSize: '9px',
+          fontSize: '11px',
           color: '#cccccc',
           wordWrap: { width: 68 },
           align: 'center',
