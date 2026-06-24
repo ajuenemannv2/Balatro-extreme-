@@ -1,4 +1,13 @@
 import type { JokerDefinition } from '../../types/Joker.ts';
+import { TAROT_DEFS } from '../TarotDefs.ts';
+import { PLANET_DEFS } from '../PlanetDefs.ts';
+import { addJokerToRun } from '../../engine/RunManager.ts';
+
+const SLOT_JACKPOT_POOL = [
+  'j_joker', 'j_jolly', 'j_zany', 'j_mad', 'j_crazy', 'j_droll',
+  'j_abstract', 'j_half', 'j_banner', 'j_supernova',
+];
+const SLOT_ENHANCEMENTS = ['mult', 'glass', 'lucky', 'gold', 'crystal', 'bronze'] as const;
 
 export const EXTREME_JOKER_DEFS: JokerDefinition[] = [
   // ─── 1. FORTUNE'S COIN ───────────────────────────────────────────────────
@@ -357,5 +366,110 @@ export const EXTREME_JOKER_DEFS: JokerDefinition[] = [
     isEternal: false,
     isPerishable: false,
     isRentable: false,
+  },
+
+  // ─── 17. ONE-ARMED BANDIT ────────────────────────────────────────────────────
+  {
+    id: 'xj_slot_machine',
+    name: 'One-Armed Bandit',
+    rarity: 'Ultra Rare',
+    baseCost: 20,
+    sellValue: 10,
+    description: 'After each hand: pull the slot machine ($5). Spin to win chips, money, consumables, a joker, or nothing at all. Pure gamble!',
+    isEternal: false,
+    isPerishable: false,
+    isRentable: false,
+    effect: () => ({}),
+    miniGameId: 'slot_machine',
+    miniGameTrigger: 'on_hand_played',
+    miniGameChance: 1.0,
+    miniGameWinDesc: 'Prize!',
+    miniGameLoseDesc: 'Nothing...',
+    onSlotResult: (rs, outcomeIndex, lastScore) => {
+      rs.money = Math.max(0, rs.money - 5);
+
+      switch (outcomeIndex) {
+        case 0:
+          return {};
+
+        case 1:
+          return { addChipsScored: 500 };
+
+        case 2:
+          return { scaleLastScore: lastScore * 3 };
+
+        case 3:
+          rs.money += 8;
+          return {};
+
+        case 4:
+          return {
+            deferredFn: (runState) => {
+              if (runState.consumables.length < runState.maxConsumableSlots && TAROT_DEFS.length > 0) {
+                const def = TAROT_DEFS[Math.floor(Math.random() * TAROT_DEFS.length)];
+                runState.consumables.push({
+                  instanceId: `tarot_slot_${Date.now()}_${Math.random()}`,
+                  type: 'tarot',
+                  defId: def.id,
+                });
+              }
+            },
+          };
+
+        case 5:
+          return {
+            deferredFn: (runState) => {
+              if (runState.consumables.length < runState.maxConsumableSlots && PLANET_DEFS.length > 0) {
+                const def = PLANET_DEFS[Math.floor(Math.random() * PLANET_DEFS.length)];
+                runState.consumables.push({
+                  instanceId: `planet_slot_${Date.now()}_${Math.random()}`,
+                  type: 'planet',
+                  defId: def.id,
+                });
+              }
+            },
+          };
+
+        case 6:
+          return {
+            deferredFn: (runState) => {
+              const played = (Object.keys(runState.handPlayCounts) as Array<keyof typeof runState.handPlayCounts>)
+                .filter(ht => (runState.handPlayCounts[ht] ?? 0) > 0);
+              const targets = played.length > 0
+                ? played
+                : Object.keys(runState.handLevels) as Array<keyof typeof runState.handLevels>;
+              if (targets.length > 0) {
+                const ht = targets[Math.floor(Math.random() * targets.length)];
+                runState.handLevels[ht] = (runState.handLevels[ht] ?? 1) + 1;
+              }
+            },
+          };
+
+        case 7:
+          return {
+            deferredFn: (runState) => {
+              const eligible = runState.hand.filter(c => c.enhancement === 'none');
+              if (eligible.length > 0) {
+                const card = eligible[Math.floor(Math.random() * eligible.length)];
+                card.enhancement = SLOT_ENHANCEMENTS[Math.floor(Math.random() * SLOT_ENHANCEMENTS.length)];
+              }
+            },
+          };
+
+        case 8:
+          return {
+            deferredFn: (runState) => {
+              const pool = SLOT_JACKPOT_POOL.filter(id => !runState.jokers.some(j => j.id === id));
+              if (pool.length > 0) {
+                const id = pool[Math.floor(Math.random() * pool.length)];
+                addJokerToRun(runState, id);
+              }
+            },
+          };
+
+        default:
+          return {};
+      }
+    },
   },
 ];

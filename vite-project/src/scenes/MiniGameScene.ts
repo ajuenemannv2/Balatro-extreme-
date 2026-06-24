@@ -37,6 +37,7 @@ export class MiniGameScene extends Phaser.Scene {
       case 'higher_lower': this._buildHigherLower(jokerName, winDesc, loseDesc); break;
       case 'dice_roll':    this._buildDiceRoll(jokerName, winDesc, loseDesc); break;
       case 'wheel':        this._buildWheel(jokerName, winDesc, loseDesc); break;
+      case 'slot_machine': this._buildSlotMachine(jokerName); break;
     }
   }
 
@@ -78,7 +79,7 @@ export class MiniGameScene extends Phaser.Scene {
     }).setOrigin(0.5, 0.5).setDepth(DEPTH.modal + 1);
   }
 
-  private _resolve(won: boolean): void {
+  private _resolve(won: boolean, outcomeIndex?: number): void {
     const jokerId = this._data.jokerId;
     // Brief flash
     const flash = this.add.graphics();
@@ -91,7 +92,7 @@ export class MiniGameScene extends Phaser.Scene {
       duration: 500,
       onComplete: () => {
         flash.destroy();
-        EventBus.emit('mini_game_result', { jokerId, won });
+        EventBus.emit('mini_game_result', { jokerId, won, outcomeIndex });
         this.scene.stop();
       },
     });
@@ -597,6 +598,205 @@ export class MiniGameScene extends Phaser.Scene {
         }
       };
       spinUpdate();
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // SLOT MACHINE
+  // ─────────────────────────────────────────────────────────────
+  private _buildSlotMachine(jokerName: string): void {
+    this._panel(560, 460);
+
+    const cx = GAME_WIDTH / 2;
+    const cy = GAME_HEIGHT / 2;
+
+    // Header
+    this.add.text(cx, cy - 200, jokerName, {
+      fontFamily: FONT, fontSize: '20px', color: '#ff44ff',
+    }).setOrigin(0.5, 0.5).setDepth(DEPTH.modal + 1);
+    this.add.text(cx, cy - 174, 'Costs $5 per pull', {
+      fontFamily: FONT, fontSize: '13px', color: '#aaaaaa',
+    }).setOrigin(0.5, 0.5).setDepth(DEPTH.modal + 1);
+
+    // Outcome table (displayed as reward hints)
+    const OUTCOMES: { label: string; color: string; weight: number }[] = [
+      { label: '✕  Nothing',         color: '#888888', weight: 22 },
+      { label: 'M  +20 Mult',        color: '#ff6666', weight: 20 },
+      { label: '★  ×3 Mult',         color: '#ff3333', weight: 10 },
+      { label: '$  +$8',             color: '#f5a623', weight: 15 },
+      { label: 'T  Tarot Card',      color: '#cc88ff', weight: 10 },
+      { label: 'P  Planet Card',     color: '#4488ff', weight: 8  },
+      { label: '↑  Level Up Hand',   color: '#44ff88', weight: 7  },
+      { label: '✦  Enhance Card',    color: '#66ccff', weight: 5  },
+      { label: '7  JACKPOT: Joker!', color: '#ffaa00', weight: 3  },
+    ];
+
+    // Build weighted outcome picker
+    const pick = (): number => {
+      const total = OUTCOMES.reduce((s, o) => s + o.weight, 0);
+      let r = Math.random() * total;
+      for (let i = 0; i < OUTCOMES.length; i++) {
+        r -= OUTCOMES[i].weight;
+        if (r <= 0) return i;
+      }
+      return 0;
+    };
+
+    // Reel symbols (cycle list for animation)
+    const REEL_SYMBOLS = ['✕', 'M', '★', '$', 'T', 'P', '↑', '✦', '7'];
+    const REEL_COLORS  = ['#888888','#ff6666','#ff3333','#f5a623','#cc88ff','#4488ff','#44ff88','#66ccff','#ffaa00'];
+
+    // Reel display: 3 reels, each showing 3 rows
+    const reelW = 88;
+    const reelH = 200;
+    const reelGap = 14;
+    const totalReelW = 3 * reelW + 2 * reelGap;
+    const reelStartX = cx - totalReelW / 2;
+    const reelY = cy - 100;
+
+    const rowH = reelH / 3;
+
+    // Draw reel backgrounds
+    for (let r = 0; r < 3; r++) {
+      const rx = reelStartX + r * (reelW + reelGap);
+      const reelBg = this.add.graphics().setDepth(DEPTH.modal + 1);
+      reelBg.fillStyle(0x111111, 1);
+      reelBg.fillRoundedRect(rx, reelY, reelW, reelH, 6);
+      reelBg.lineStyle(2, 0x444444, 1);
+      reelBg.strokeRoundedRect(rx, reelY, reelW, reelH, 6);
+
+      // Center row highlight
+      reelBg.lineStyle(2, 0xff44ff, 0.6);
+      reelBg.strokeRoundedRect(rx + 2, reelY + rowH + 2, reelW - 4, rowH - 4, 3);
+    }
+
+    // Reel text objects: each reel has 3 rows
+    const reelTexts: Phaser.GameObjects.Text[][] = [];
+    const reelIndices: number[][] = [];
+
+    for (let r = 0; r < 3; r++) {
+      const rx = reelStartX + r * (reelW + reelGap) + reelW / 2;
+      const texts: Phaser.GameObjects.Text[] = [];
+      const indices: number[] = [];
+      for (let row = 0; row < 3; row++) {
+        const symIdx = Math.floor(Math.random() * REEL_SYMBOLS.length);
+        indices.push(symIdx);
+        const t = this.add.text(rx, reelY + row * rowH + rowH / 2, REEL_SYMBOLS[symIdx], {
+          fontFamily: FONT, fontSize: '32px', color: REEL_COLORS[symIdx],
+        }).setOrigin(0.5, 0.5).setDepth(DEPTH.modal + 2);
+        texts.push(t);
+      }
+      reelTexts.push(texts);
+      reelIndices.push(indices);
+    }
+
+    // Win/lose indicator line
+    const indicator = this.add.graphics().setDepth(DEPTH.modal + 3);
+    indicator.lineStyle(3, 0xff44ff, 0.4);
+    indicator.lineBetween(reelStartX - 8, reelY + rowH + rowH / 2, reelStartX + totalReelW + 8, reelY + rowH + rowH / 2);
+
+    // Pull button
+    const pullBtn = this.add.graphics().setDepth(DEPTH.modal + 2);
+    const drawPull = (hover: boolean) => {
+      pullBtn.clear();
+      pullBtn.fillStyle(hover ? 0xcc00cc : 0x880088, 1);
+      pullBtn.fillRoundedRect(cx - 80, reelY + reelH + 20, 160, 52, 8);
+      pullBtn.lineStyle(2, 0xff44ff, 0.8);
+      pullBtn.strokeRoundedRect(cx - 80, reelY + reelH + 20, 160, 52, 8);
+    };
+    drawPull(false);
+    const pullTxt = this.add.text(cx, reelY + reelH + 46, 'PULL  ($5)', {
+      fontFamily: FONT, fontSize: '18px', color: '#ffffff',
+    }).setOrigin(0.5, 0.5).setDepth(DEPTH.modal + 3);
+
+    let pulled = false;
+
+    const pullZone = this.add.zone(cx, reelY + reelH + 46, 160, 52)
+      .setInteractive({ useHandCursor: true }).setDepth(DEPTH.modal + 4);
+    pullZone.on('pointerover', () => { if (!pulled) drawPull(true); });
+    pullZone.on('pointerout', () => drawPull(false));
+    pullZone.on('pointerdown', () => {
+      if (pulled) return;
+      pulled = true;
+      drawPull(false);
+      pullTxt.setText('Spinning...');
+      pullZone.destroy();
+
+      const outcome = pick();
+      const finalSymIdx = outcome; // outcome maps 1:1 to symbol index for winning outcomes
+      // For the center row of each reel, set final symbols:
+      //   Reel center row (row 1) = outcome symbol for all 3 if win, mixed if lose
+      const won = outcome > 0;
+
+      // Reel 1 stops first, then reel 2, then reel 3
+      const spinReel = (reelIdx: number, spinMs: number, delay: number, finalIdx: number) => {
+        this.time.delayedCall(delay, () => {
+          let ticks = 0;
+          const totalTicks = Math.floor(spinMs / 60);
+          const tickReel = () => {
+            for (let row = 0; row < 3; row++) {
+              reelIndices[reelIdx][row] = (reelIndices[reelIdx][row] + 1) % REEL_SYMBOLS.length;
+              reelTexts[reelIdx][row].setText(REEL_SYMBOLS[reelIndices[reelIdx][row]]);
+              reelTexts[reelIdx][row].setColor(REEL_COLORS[reelIndices[reelIdx][row]]);
+            }
+            ticks++;
+            if (ticks < totalTicks) {
+              this.time.delayedCall(60, tickReel);
+            } else {
+              // Land on final symbol in center row
+              reelIndices[reelIdx][1] = finalIdx;
+              reelTexts[reelIdx][1].setText(REEL_SYMBOLS[finalIdx]);
+              reelTexts[reelIdx][1].setColor(REEL_COLORS[finalIdx]);
+
+              // Brief flash on this reel's center cell
+              this.tweens.add({
+                targets: reelTexts[reelIdx][1],
+                scaleX: 1.3, scaleY: 1.3,
+                duration: 120,
+                yoyo: true,
+                ease: 'Quad.Out',
+              });
+
+              if (reelIdx === 2) {
+                // All reels done — show result
+                this.time.delayedCall(500, () => {
+                  const outcomeData = OUTCOMES[outcome];
+                  const resultColor = won ? outcomeData.color : '#888888';
+                  const resultText = won ? `★  ${outcomeData.label}` : '✕  Nothing...';
+
+                  const resultTxt = this.add.text(cx, reelY + reelH + 90, resultText, {
+                    fontFamily: FONT, fontSize: '20px', color: resultColor,
+                    stroke: '#000000', strokeThickness: 2,
+                  }).setOrigin(0.5, 0.5).setDepth(DEPTH.modal + 5);
+
+                  if (won) {
+                    this.tweens.add({
+                      targets: resultTxt,
+                      scaleX: 1.15, scaleY: 1.15,
+                      duration: 200, yoyo: true, repeat: 1,
+                    });
+                  }
+
+                  this.time.delayedCall(1400, () => {
+                    resultTxt.destroy();
+                    this._resolve(won, outcome);
+                  });
+                });
+              }
+            }
+          };
+          tickReel();
+        });
+      };
+
+      // For non-winning outcomes (0), show mismatched symbols
+      const reelFinals = won
+        ? [finalSymIdx, finalSymIdx, finalSymIdx]
+        : [1, 3, 5]; // mismatched symbols for "nothing"
+
+      spinReel(0, 900,    0,    reelFinals[0]);
+      spinReel(1, 1200,   300,  reelFinals[1]);
+      spinReel(2, 1500,   600,  reelFinals[2]);
     });
   }
 }

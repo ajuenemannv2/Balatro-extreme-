@@ -34,6 +34,7 @@ export const COLORS = {
   rarityUncommon:  0x4488ff,
   rarityRare:      0xff4444,
   rarityLegendary: 0xffaa00,
+  rarityUltraRare: 0xff44ff,
 } as const;
 
 export const DEPTH = {

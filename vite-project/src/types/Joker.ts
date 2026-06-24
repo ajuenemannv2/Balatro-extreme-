@@ -2,8 +2,8 @@ import type { PlayingCard, Edition } from './Card.ts';
 import type { HandType, ScoringContext } from './Score.ts';
 import type { RunState } from './Run.ts';
 
-export type JokerRarity = 'Common'|'Uncommon'|'Rare'|'Legendary';
-export type MiniGameId = 'coin_flip'|'shell_game'|'higher_lower'|'dice_roll'|'wheel';
+export type JokerRarity = 'Common'|'Uncommon'|'Rare'|'Legendary'|'Ultra Rare';
+export type MiniGameId = 'coin_flip'|'shell_game'|'higher_lower'|'dice_roll'|'wheel'|'slot_machine';
 export type MiniGameTrigger = 'on_hand_played'|'on_blind_start'|'on_score_milestone';
 
 export interface JokerEffectResult {
@@ -69,6 +69,7 @@ export interface JokerDefinition {
   miniGameLoseDesc?: string;
   onMiniGameWin?: (runState: RunState, lastScore: number) => MiniGameWinLoseEffect;
   onMiniGameLose?: (runState: RunState, lastScore: number) => MiniGameWinLoseEffect;
+  onSlotResult?: (runState: RunState, outcomeIndex: number, lastScore: number) => MiniGameWinLoseEffect;
 }
 
 export interface JokerInstance extends JokerDefinition {

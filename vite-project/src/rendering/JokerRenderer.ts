@@ -32,6 +32,7 @@ function rarityBorderColor(rarity: JokerRarity): string {
     case 'Uncommon':  return '#4488ff';
     case 'Rare':      return '#ff4444';
     case 'Legendary': return '#ffaa00';
+    case 'Ultra Rare': return '#ff44ff';
   }
 }
 
@@ -41,6 +42,7 @@ function rarityBgColor(rarity: JokerRarity): string {
     case 'Uncommon':  return '#0a1a3a';
     case 'Rare':      return '#2a0a0a';
     case 'Legendary': return '#1a1500';
+    case 'Ultra Rare': return '#1a0020';
   }
 }
 
@@ -50,6 +52,7 @@ function rarityStarCount(rarity: JokerRarity): number {
     case 'Uncommon':  return 2;
     case 'Rare':      return 3;
     case 'Legendary': return 4;
+    case 'Ultra Rare': return 5;
   }
 }
 
@@ -336,6 +339,20 @@ export function drawJokerFace(
   grad.addColorStop(1, borderColor + '22');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
+
+  // Ultra Rare: prismatic animated border shimmer (drawn as two extra gradient borders)
+  if (rarity === 'Ultra Rare') {
+    const shimmer = ctx.createLinearGradient(0, 0, W, H);
+    shimmer.addColorStop(0,    'rgba(255,68,255,0.5)');
+    shimmer.addColorStop(0.25, 'rgba(68,136,255,0.5)');
+    shimmer.addColorStop(0.5,  'rgba(68,255,180,0.5)');
+    shimmer.addColorStop(0.75, 'rgba(255,200,68,0.5)');
+    shimmer.addColorStop(1,    'rgba(255,68,255,0.5)');
+    roundedRect(ctx, 2, 2, W - 4, H - 4, CARD_RADIUS);
+    ctx.strokeStyle = shimmer;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
 
   // Stars at top
   const starCount = rarityStarCount(rarity);

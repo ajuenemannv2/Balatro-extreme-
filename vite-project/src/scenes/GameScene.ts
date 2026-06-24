@@ -920,12 +920,14 @@ export class GameScene extends Phaser.Scene {
         this._miniGameUsesThisRound.set(joker.id, used + 1);
       }
 
-      const won = await this._launchMiniGame(joker.miniGameId, joker.id, joker.name,
+      const result = await this._launchMiniGame(joker.miniGameId, joker.id, joker.name,
         joker.miniGameWinDesc ?? 'Bonus!', joker.miniGameLoseDesc ?? 'Penalty!');
 
-      const effect = won
-        ? joker.onMiniGameWin?.(rs, lastScore)
-        : joker.onMiniGameLose?.(rs, lastScore);
+      const { won, outcomeIndex } = result;
+
+      const effect = joker.onSlotResult
+        ? joker.onSlotResult(rs, outcomeIndex ?? 0, lastScore)
+        : (won ? joker.onMiniGameWin?.(rs, lastScore) : joker.onMiniGameLose?.(rs, lastScore));
 
       if (!effect) continue;
 
@@ -946,6 +948,10 @@ export class GameScene extends Phaser.Scene {
         rs.discardsRemaining = Math.max(0, rs.discardsRemaining + effect.addDiscardsRemaining);
       }
 
+      if (effect?.deferredFn) {
+        effect.deferredFn(rs);
+      }
+
       const msg = won
         ? `${joker.name}: ${joker.miniGameWinDesc ?? 'WIN!'}`
         : `${joker.name}: ${joker.miniGameLoseDesc ?? 'LOSE!'}`;
@@ -963,10 +969,10 @@ export class GameScene extends Phaser.Scene {
     jokerName: string,
     winDesc: string,
     loseDesc: string,
-  ): Promise<boolean> {
-    return new Promise<boolean>((resolve) => {
-      EventBus.once<{ jokerId: string; won: boolean }>('mini_game_result', (data) => {
-        resolve(data.won);
+  ): Promise<{ won: boolean; outcomeIndex?: number }> {
+    return new Promise((resolve) => {
+      EventBus.once<{ jokerId: string; won: boolean; outcomeIndex?: number }>('mini_game_result', (data) => {
+        resolve({ won: data.won, outcomeIndex: data.outcomeIndex });
       });
       this.scene.launch('MiniGameScene', { gameId, jokerId, jokerName, winDesc, loseDesc });
       this.scene.bringToTop('MiniGameScene');
