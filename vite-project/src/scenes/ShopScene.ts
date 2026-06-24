@@ -11,6 +11,7 @@ import { canAfford, buyItem, sellJoker, sellConsumable } from '../engine/Economy
 import { addJokerToRun, getRNG } from '../engine/RunManager.ts';
 import { saveRun } from '../engine/SaveSystem.ts';
 import { SFX } from '../utils/SoundEngine.ts';
+import { AudioManager } from '../audio/AudioManager.ts';
 import { drawJokerFace } from '../rendering/JokerRenderer.ts';
 import { drawTarotFace, drawPlanetFace, drawSpectralFace } from '../rendering/ConsumableRenderer.ts';
 import { drawCardFace, drawCardBack } from '../rendering/CardRenderer.ts';
@@ -76,6 +77,7 @@ export class ShopScene extends Phaser.Scene {
     rs.rngState = this.rng.getState();
 
     this.cameras.main.setBackgroundColor(COLORS.bgHex);
+    AudioManager.switchTrack('shop').catch(() => {});
 
     this._drawBackground();
     this._buildHeader();
@@ -755,6 +757,7 @@ export class ShopScene extends Phaser.Scene {
           }
           const value = sellJoker(rs, joker.instanceId);
           if (value > 0) {
+            AudioManager.playSFX('sell');
             this.moneyText.setText(`$${rs.money}`);
             ScorePopup.spawn(this, jx, rowY - 20, `+$${value}`, COLORS.goldHex);
             saveRun(rs);

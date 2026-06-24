@@ -6,6 +6,7 @@ import { NegativePipeline } from '../rendering/shaders/NegativePipeline.ts';
 import { EventBus } from '../utils/EventBus.ts';
 import { loadRun } from '../engine/SaveSystem.ts';
 import { createNewRun } from '../engine/RunManager.ts';
+import { AudioManager } from '../audio/AudioManager.ts';
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -40,6 +41,9 @@ export class BootScene extends Phaser.Scene {
         EventBus.emit('run_state_ready', rs);
       }
     });
+
+    // Preload SFX WAVs in background (OfflineAudioContext — no user gesture needed)
+    AudioManager.init().catch(() => {});
 
     this.time.delayedCall(500, () => {
       this.scene.start('MenuScene');

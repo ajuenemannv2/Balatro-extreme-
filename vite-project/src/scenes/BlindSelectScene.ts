@@ -6,6 +6,7 @@ import { getChipTarget, getBlindName, getBlindDescription } from '../engine/Blin
 import { startBlind, advanceToNextBlind, getRNG } from '../engine/RunManager.ts';
 import { numStr } from '../utils/MathUtils.ts';
 import { EventBus } from '../utils/EventBus.ts';
+import { AudioManager } from '../audio/AudioManager.ts';
 
 export class BlindSelectScene extends Phaser.Scene {
   private runState!: RunState;
@@ -33,6 +34,7 @@ export class BlindSelectScene extends Phaser.Scene {
 
   private _build(): void {
     const rs = this.runState;
+    AudioManager.switchTrack('menu').catch(() => {});
 
     // ── Felt green table background ───────────────────────────────────────────
     const bgGfx = this.add.graphics();

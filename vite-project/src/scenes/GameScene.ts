@@ -13,6 +13,7 @@ import { applyDeferredEffects, advanceToNextBlind, getRNG } from '../engine/RunM
 import { saveRun } from '../engine/SaveSystem.ts';
 import { EventBus } from '../utils/EventBus.ts';
 import { SFX } from '../utils/SoundEngine.ts';
+import { AudioManager } from '../audio/AudioManager.ts';
 import { CardView } from '../ui/CardView.ts';
 import { JokerView } from '../ui/JokerView.ts';
 import { ScorePopup } from '../ui/ScorePopup.ts';
@@ -109,6 +110,10 @@ export class GameScene extends Phaser.Scene {
 
     this.cameras.main.setBackgroundColor(COLORS.bgHex);
 
+    // Switch to appropriate music track (boss blind gets more intense track)
+    const isBoss = this.runState.blindIndex === 2;
+    AudioManager.switchTrack(isBoss ? 'boss' : 'game').catch(() => {});
+
     this._drawBackground();
     this._buildHUD();
     this._buildJokerRow();
@@ -152,6 +157,15 @@ export class GameScene extends Phaser.Scene {
       felt.fillStyle(0x3d7a5a, 0.07 * (5 - s));
       felt.fillEllipse(GAME_WIDTH / 2, 380, GAME_WIDTH * 0.85 * (s / 4), 400 * (s / 4));
     }
+
+    // Subtle breathing pulse on felt (depth rhythm, gives table a "living" feel)
+    const feltPulse = this.add.graphics().setDepth(DEPTH.bg + 1).setAlpha(0);
+    feltPulse.fillStyle(0x4a8060, 0.18);
+    feltPulse.fillEllipse(GAME_WIDTH / 2, 380, GAME_WIDTH * 0.7, 320);
+    this.tweens.add({
+      targets: feltPulse, alpha: 1, duration: 3200, yoyo: true,
+      repeat: -1, ease: 'Sine.InOut',
+    });
 
     // ── HUD bar at top ────────────────────────────────────────────────────────
     const hudBar = this.add.graphics();
@@ -655,15 +669,17 @@ export class GameScene extends Phaser.Scene {
         const cv = new CardView(this, GAME_WIDTH - 60, 640, card, this.textureCache);
         cv.setFaceUp(card.faceUp);
         cv.setAlpha(0);
+        const dealDelay = newCardIndex * ANIM.dealStagger;
         this.tweens.add({
           targets: cv,
           x: targetX,
           y: targetY,
           alpha: 1,
           duration: ANIM.dealDuration,
-          delay: newCardIndex * ANIM.dealStagger,
+          delay: dealDelay,
           ease: 'Quad.Out',
         });
+        this.time.delayedCall(dealDelay, () => AudioManager.playSFX('card_deal'));
         cv.on('pointerdown', () => this._onCardClick(cv));
         newCardIndex++;
         return cv;
@@ -986,14 +1002,22 @@ export class GameScene extends Phaser.Scene {
           cv?.glow(_glowColorForSource(step.source));
         } else if (hint.type === 'joker_activate') {
           const jv = this.jokerViews.find(v => v.jokerData.instanceId === hint.jokerId);
+          AudioManager.playSFX('joker_activate');
           jv?.flash();
         } else if (hint.type === 'chip_add' && hint.delta > 0) {
+          SFX.chipScore();
+          AudioManager.playSFX('chip_hit');
           const sz = hint.delta >= 50 ? 'lg' : hint.delta >= 20 ? 'md' : 'sm';
           ScorePopup.spawn(this, cardX, cardY - CARD_H / 2 - 28, `+${numStr(hint.delta)}`, '#4a90d9', sz);
         } else if (hint.type === 'mult_add' && hint.delta > 0) {
+          SFX.multScore();
+          AudioManager.playSFX('mult_trigger');
           const sz = hint.delta >= 10 ? 'lg' : hint.delta >= 4 ? 'md' : 'sm';
           ScorePopup.spawn(this, cardX, cardY - CARD_H / 2 - 28, `+${hint.delta}×`, '#e74c3c', sz);
         } else if (hint.type === 'mult_mul') {
+          SFX.multScore();
+          AudioManager.playSFX('mult_trigger');
+          if (hint.factor >= 3) this.cameras.main.shake(80, 0.004);
           ScorePopup.spawn(this, cardX, cardY - CARD_H / 2 - 28, `×${hint.factor}`, '#ff8844', 'lg');
         } else if (hint.type === 'money_add') {
           ScorePopup.spawn(this, cardX, cardY + CARD_H / 2 + 20, `+$${hint.delta}`, COLORS.goldHex, 'md');
@@ -1065,6 +1089,7 @@ export class GameScene extends Phaser.Scene {
     this.isAnimating = true;
     this.playBtn.setEnabled(false);
     this.discardBtn.setEnabled(false);
+    AudioManager.playSFX('discard');
 
     for (const j of rs.jokers) {
       j.onDiscard?.(rs, selected.map(cv => cv.cardData));
@@ -1162,6 +1187,8 @@ export class GameScene extends Phaser.Scene {
     }
 
     SFX.blindWon();
+    AudioManager.playSFX('win_round');
+    this.cameras.main.shake(350, 0.015);
     ScorePopup.spawn(this, GAME_WIDTH / 2, PLAY_AREA_Y, `Round Won! +$${earned}`, '#44cc66');
     await this._delay(1200);
 

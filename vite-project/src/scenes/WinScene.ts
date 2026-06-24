@@ -4,6 +4,7 @@ import { COLORS, GAME_WIDTH, GAME_HEIGHT, FONT } from '../config.ts';
 import { Button } from '../ui/Button.ts';
 import { clearSave } from '../engine/SaveSystem.ts';
 import { numStr } from '../utils/MathUtils.ts';
+import { AudioManager } from '../audio/AudioManager.ts';
 
 export class WinScene extends Phaser.Scene {
   private runState!: RunState;
@@ -19,6 +20,7 @@ export class WinScene extends Phaser.Scene {
   create(): void {
     const rs = this.runState;
     this.cameras.main.setBackgroundColor(COLORS.bgHex);
+    AudioManager.stopMusic();
 
     // Background glow overlay
     const glow = this.add.graphics();
