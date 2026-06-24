@@ -50,6 +50,7 @@ export class ShopScene extends Phaser.Scene {
   private rerollBtn!: Button;
   private jokerViews: JokerView[] = [];
   private itemContainers: Phaser.GameObjects.Container[] = [];
+  private shopBuyBtns: Button[] = [];
   private voucherContainer: Phaser.GameObjects.Container | null = null;
 
   constructor() {
@@ -95,7 +96,7 @@ export class ShopScene extends Phaser.Scene {
     // Main shop panel
     const panel = this.add.graphics();
     panel.fillStyle(COLORS.panel, 0.8);
-    panel.fillRoundedRect(40, 80, GAME_WIDTH - 80, 430, 12);
+    panel.fillRoundedRect(40, 80, GAME_WIDTH - 80, 440, 12);
     panel.setDepth(DEPTH.bg + 1);
 
     // Joker row panel
@@ -143,14 +144,18 @@ export class ShopScene extends Phaser.Scene {
   private _buildShopItems(): void {
     this.itemContainers.forEach(c => c.destroy());
     this.itemContainers = [];
+    this.shopBuyBtns.forEach(b => b.destroy());
+    this.shopBuyBtns = [];
 
     const items = this.shopState.items;
     const count = items.length;
-    const slotW = 220;
-    const slotH = 280;
+    const slotW = 200;
+    const slotH = 320;
     const spacing = 20;
     const totalW = count * slotW + (count - 1) * spacing;
-    const startX = GAME_WIDTH / 2 - totalW / 2;
+    // Center in the left zone (GAME_WIDTH - 230 wide) to leave room for the voucher
+    const leftZoneCenter = (GAME_WIDTH - 230) / 2;
+    const startX = Math.max(60, leftZoneCenter - totalW / 2);
     const slotY = 115;
 
     items.forEach((item, i) => {
@@ -222,8 +227,8 @@ export class ShopScene extends Phaser.Scene {
     } else if (item.type === 'spectral' && item.spectralDef) {
       name = item.spectralDef.name;
       typeLabel = 'Spectral';
-    } else if (item.type === 'pack') {
-      name = (item.packType ?? 'Pack').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    } else if (item.type === 'pack' && item.packType) {
+      name = item.packType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
       typeLabel = 'Booster Pack';
     } else if (item.type === 'voucher' && item.voucherId) {
       const vDef = VOUCHER_DEFS.find(v => v.id === item.voucherId);
@@ -264,6 +269,19 @@ export class ShopScene extends Phaser.Scene {
     else if (item.type === 'voucher' && item.voucherId) {
       const vDef = VOUCHER_DEFS.find(v => v.id === item.voucherId);
       desc = vDef?.description ?? '';
+    } else if (item.type === 'pack' && item.packType) {
+      const packDescs: Record<string, string> = {
+        arcana: 'Choose 1 of 3 Tarot cards to add to your consumables.',
+        mega_arcana: 'Choose 2 of 4 Tarot cards to add to your consumables.',
+        celestial: 'Choose 1 of 3 Planet cards to level up a hand.',
+        mega_celestial: 'Choose 2 of 4 Planet cards to level up hands.',
+        spectral: 'Choose 1 of 2 powerful Spectral cards.',
+        buffoon: 'Choose 1 of 2 Jokers to add to your collection.',
+        mega_buffoon: 'Choose 2 of 4 Jokers to add to your collection.',
+        standard: 'Choose 1 playing card to add to your deck.',
+        mega_standard: 'Choose 2 playing cards to add to your deck.',
+      };
+      desc = packDescs[item.packType] ?? 'Open to reveal contents.';
     }
 
     if (desc) {
@@ -279,15 +297,16 @@ export class ShopScene extends Phaser.Scene {
     const buyBtn = new Button(
       this,
       x + w / 2,
-      y + h - 26,
-      130,
-      36,
+      y + h - 28,
+      140,
+      38,
       `Buy $${item.cost}`,
       () => this._buyItem(item, container),
       { color: canBuy ? COLORS.green : 0x555555, fontSize: 14 }
     );
     buyBtn.setEnabled(canBuy);
     buyBtn.setDepth(DEPTH.ui);
+    this.shopBuyBtns.push(buyBtn);
 
     return container;
   }
@@ -670,10 +689,10 @@ export class ShopScene extends Phaser.Scene {
     const voucher = this.shopState.voucher;
     if (!voucher) return;
 
-    const vx = GAME_WIDTH - 190;
+    const vx = GAME_WIDTH - 205;
     const vy = 115;
-    const vw = 160;
-    const vh = 260;
+    const vw = 165;
+    const vh = 320;
 
     const container = this.add.container(vx, vy);
     container.setDepth(DEPTH.cards);
@@ -704,12 +723,12 @@ export class ShopScene extends Phaser.Scene {
 
     if (voucher.voucherId) {
       const vDef = VOUCHER_DEFS.find(v => v.id === voucher.voucherId);
-      container.add(this.add.text(vw / 2, 70, vDef?.name ?? 'Voucher', {
+      container.add(this.add.text(vw / 2, 60 + CARD_H / 2 + 12, vDef?.name ?? 'Voucher', {
         fontFamily: FONT, fontSize: '13px', color: '#ffffff', align: 'center',
         wordWrap: { width: vw - 10 },
-      }).setOrigin(0.5));
+      }).setOrigin(0.5, 0));
 
-      container.add(this.add.text(vw / 2, 110, vDef?.description ?? '', {
+      container.add(this.add.text(vw / 2, 60 + CARD_H / 2 + 34, vDef?.description ?? '', {
         fontFamily: FONT, fontSize: '10px', color: '#aaaaaa', align: 'center',
         wordWrap: { width: vw - 10 },
       }).setOrigin(0.5, 0));
@@ -719,9 +738,9 @@ export class ShopScene extends Phaser.Scene {
     new Button(
       this,
       vx + vw / 2,
-      vy + vh - 26,
-      120,
-      34,
+      vy + vh - 28,
+      130,
+      38,
       `Buy $${voucher.cost}`,
       () => this._buyItem(voucher, container),
       { color: canBuy ? COLORS.green : 0x555555, fontSize: 13 }
@@ -854,6 +873,7 @@ export class ShopScene extends Phaser.Scene {
   shutdown(): void {
     this.jokerViews.forEach(jv => jv.destroy());
     this.itemContainers.forEach(c => c.destroy());
+    this.shopBuyBtns.forEach(b => b.destroy());
     this.voucherContainer?.destroy();
     this.textureCache?.clear();
   }

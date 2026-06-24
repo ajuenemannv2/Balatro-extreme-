@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Background -->
+  <rect width="512" height="512" rx="80" fill="#1c1930"/>
+  <!-- Felt table -->
+  <ellipse cx="256" cy="300" rx="205" ry="155" fill="#1a4a1a" opacity="0.45"/>
+  <!-- Card shadow -->
+  <rect x="164" y="88" width="192" height="256" rx="16" fill="#000000" opacity="0.35"/>
+  <!-- Card face -->
+  <defs>
+    <linearGradient id="cardGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2a2060"/>
+      <stop offset="100%" stop-color="#160e3a"/>
+    </linearGradient>
+  </defs>
+  <rect x="156" y="80" width="192" height="256" rx="16" fill="url(#cardGrad)"/>
+  <!-- Gold card border -->
+  <rect x="156" y="80" width="192" height="256" rx="16" fill="none" stroke="#c8a020" stroke-width="4"/>
+  <!-- Inner purple border -->
+  <rect x="166" y="90" width="172" height="236" rx="10" fill="none" stroke="#8060c0" stroke-width="1.5" opacity="0.6"/>
+  <!-- Top-left: J -->
+  <text x="170" y="126" font-family="Georgia, serif" font-size="36" font-weight="bold" fill="#c8a020">J</text>
+  <!-- Top-left: heart suit -->
+  <text x="170" y="154" font-family="serif" font-size="24" fill="#cc2222">♥</text>
+  <!-- Center large heart -->
+  <text x="252" y="222" font-family="serif" font-size="80" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#cc2222">♥</text>
+  <!-- BX label -->
+  <text x="252" y="308" font-family="Georgia, serif" font-size="52" font-weight="bold" text-anchor="middle" dominant-baseline="alphabetic" fill="#c8a020">BX</text>
+  <!-- Sparkle dots -->
+  <circle cx="180" cy="104" r="5" fill="#ffcc44"/>
+  <circle cx="330" cy="104" r="5" fill="#ff4488"/>
+  <circle cx="180" cy="328" r="5" fill="#44ccff"/>
+  <circle cx="330" cy="328" r="5" fill="#88ff44"/>
+  <!-- EXTREME label -->
+  <text x="256" y="424" font-family="Arial, sans-serif" font-size="22" font-weight="600" text-anchor="middle" letter-spacing="4" fill="#c8a020" opacity="0.75">EXTREME</text>
+</svg>
