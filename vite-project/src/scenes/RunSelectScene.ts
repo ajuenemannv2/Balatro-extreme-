@@ -3,6 +3,7 @@ import { COLORS, GAME_WIDTH, FONT } from '../config.ts';
 import { Button } from '../ui/Button.ts';
 import { DECK_DEFS } from '../data/DeckDefs.ts';
 import { createNewRun } from '../engine/RunManager.ts';
+import { AudioManager } from '../audio/AudioManager.ts';
 
 export class RunSelectScene extends Phaser.Scene {
   private selectedStake = 0;
@@ -19,6 +20,7 @@ export class RunSelectScene extends Phaser.Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor(COLORS.bgHex);
+    AudioManager.switchTrack('menu').catch(() => {});
 
     // Background panels
     const leftPanel = this.add.graphics();

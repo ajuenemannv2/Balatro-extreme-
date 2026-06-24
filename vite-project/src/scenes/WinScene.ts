@@ -20,7 +20,7 @@ export class WinScene extends Phaser.Scene {
   create(): void {
     const rs = this.runState;
     this.cameras.main.setBackgroundColor(COLORS.bgHex);
-    AudioManager.stopMusic();
+    AudioManager.switchTrack('menu').catch(() => {});
 
     // Background glow overlay
     const glow = this.add.graphics();

@@ -23,7 +23,7 @@ export class GameOverScene extends Phaser.Scene {
     const rs = this.runState;
     this.cameras.main.setBackgroundColor(COLORS.bgHex);
     AudioManager.playSFX('game_over');
-    AudioManager.stopMusic();
+    AudioManager.switchTrack('menu').catch(() => {});
 
     // Dark overlay panel
     const bg = this.add.graphics();
