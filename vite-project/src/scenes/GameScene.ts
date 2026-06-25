@@ -101,6 +101,7 @@ export class GameScene extends Phaser.Scene {
     this.handViews = [];
     this.jokerViews = [];
     this.consumableViews = [];
+    this._lastDisplayedMoney = -1;
 
     this.textureCache = new TextureCache(this, 512);
     this.currentChips = 0;

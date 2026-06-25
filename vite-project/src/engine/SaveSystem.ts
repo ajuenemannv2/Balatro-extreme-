@@ -33,8 +33,10 @@ export function loadRun(): RunState | null {
         onSell: def.onSell,
         onRoundEnd: def.onRoundEnd,
         onDiscard: def.onDiscard,
+        onBlindStart: def.onBlindStart,
         onMiniGameWin: def.onMiniGameWin,
         onMiniGameLose: def.onMiniGameLose,
+        onSlotResult: def.onSlotResult,
       };
     });
 

@@ -177,7 +177,7 @@ const config: Phaser.Types.Core.GameConfig = {
     MiniGameScene,
   ],
   render: {
-    antialias: false,
+    antialias: true,
     pixelArt: false,
   },
 };
