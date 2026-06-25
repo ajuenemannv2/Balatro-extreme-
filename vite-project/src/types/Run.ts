@@ -37,5 +37,6 @@ export interface RunState {
   discountsActive: number;
   freeRerollsPerShop: number;
   lastHandScore: number;
+  nextHandBonus?: { chips?: number; scoreMultiplier?: number };
 }
 

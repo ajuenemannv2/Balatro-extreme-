@@ -68,6 +68,7 @@ export class GameScene extends Phaser.Scene {
   private discardsUsedThisRound = 0;
   private _gameWonHandler: ((rs: RunState) => void) | null = null;
   private _miniGameUsesThisRound: Map<string, number> = new Map();
+  private _lastDisplayedMoney = -1;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -227,6 +228,32 @@ export class GameScene extends Phaser.Scene {
     bottomBar.lineStyle(1, 0x2a2a44, 0.8);
     bottomBar.lineBetween(0, 650, GAME_WIDTH, 650);
     bottomBar.setDepth(DEPTH.bg + 2);
+
+    // ── Vignette — dark edges for depth ──────────────────────────────────────
+    const vig = this.add.graphics().setDepth(DEPTH.bg + 4).setAlpha(0.55);
+    const vigSteps = 8;
+    for (let i = 0; i < vigSteps; i++) {
+      const t = i / vigSteps;
+      const alpha = (1 - t) * 0.45;
+      const inset = t * Math.min(GAME_WIDTH, GAME_HEIGHT) * 0.42;
+      vig.fillStyle(0x000000, alpha);
+      vig.fillRect(0, 0, GAME_WIDTH, inset);
+      vig.fillRect(0, GAME_HEIGHT - inset, GAME_WIDTH, inset);
+      vig.fillRect(0, 0, inset, GAME_HEIGHT);
+      vig.fillRect(GAME_WIDTH - inset, 0, inset, GAME_HEIGHT);
+    }
+
+    // ── Faint suit corner decorations ─────────────────────────────────────────
+    const suits = ['♠', '♥', '♦', '♣'];
+    const corners = [
+      { x: 36, y: 100 }, { x: GAME_WIDTH - 36, y: 100 },
+      { x: 36, y: GAME_HEIGHT - 36 }, { x: GAME_WIDTH - 36, y: GAME_HEIGHT - 36 },
+    ];
+    for (let i = 0; i < 4; i++) {
+      this.add.text(corners[i].x, corners[i].y, suits[i], {
+        fontFamily: FONT, fontSize: '28px', color: '#ffffff',
+      }).setOrigin(0.5).setAlpha(0.05).setDepth(DEPTH.bg + 3);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -780,7 +807,7 @@ export class GameScene extends Phaser.Scene {
     rs.rngState = rng.getState();
 
     this.handTypeText.setText(result.handType);
-    ScorePopup.spawn(this, GAME_WIDTH / 2, PLAY_AREA_Y - 80, result.handType, COLORS.goldHex);
+    this._showHandBanner(result.handType, rs.handLevels[result.handType] ?? 1);
 
     this.currentChips = 0;
     this.currentMult = 0;
@@ -788,8 +815,18 @@ export class GameScene extends Phaser.Scene {
 
     await this._animateScoringSteps(result.steps, selectedCards);
 
-    const finalScore = result.finalScore;
+    let finalScore = result.finalScore;
+    if (rs.nextHandBonus) {
+      if (rs.nextHandBonus.chips) finalScore += rs.nextHandBonus.chips;
+      if (rs.nextHandBonus.scoreMultiplier) finalScore = Math.floor(finalScore * rs.nextHandBonus.scoreMultiplier);
+      rs.nextHandBonus = undefined;
+    }
     ScorePopup.spawn(this, GAME_WIDTH / 2, PLAY_AREA_Y - 30, `${numStr(finalScore)}`, '#ffffff');
+
+    if (finalScore >= 800) {
+      const particleColor = finalScore >= 5000 ? 0xff44ff : finalScore >= 2000 ? 0xffaa00 : 0xffdd44;
+      this._burstParticles(GAME_WIDTH / 2, PLAY_AREA_Y, particleColor);
+    }
 
     rs.chipsScored += finalScore;
     rs.handsRemaining -= 1;
@@ -920,8 +957,11 @@ export class GameScene extends Phaser.Scene {
         this._miniGameUsesThisRound.set(joker.id, used + 1);
       }
 
+      const slotCost = joker.miniGameId === 'slot_machine'
+        ? (joker.runtimeCounters?.pullCost ?? 1)
+        : undefined;
       const result = await this._launchMiniGame(joker.miniGameId, joker.id, joker.name,
-        joker.miniGameWinDesc ?? 'Bonus!', joker.miniGameLoseDesc ?? 'Penalty!');
+        joker.miniGameWinDesc ?? 'Bonus!', joker.miniGameLoseDesc ?? 'Penalty!', slotCost);
 
       const { won, outcomeIndex } = result;
 
@@ -969,12 +1009,13 @@ export class GameScene extends Phaser.Scene {
     jokerName: string,
     winDesc: string,
     loseDesc: string,
+    slotCost?: number,
   ): Promise<{ won: boolean; outcomeIndex?: number }> {
     return new Promise((resolve) => {
       EventBus.once<{ jokerId: string; won: boolean; outcomeIndex?: number }>('mini_game_result', (data) => {
         resolve({ won: data.won, outcomeIndex: data.outcomeIndex });
       });
-      this.scene.launch('MiniGameScene', { gameId, jokerId, jokerName, winDesc, loseDesc });
+      this.scene.launch('MiniGameScene', { gameId, jokerId, jokerName, winDesc, loseDesc, slotCost });
       this.scene.bringToTop('MiniGameScene');
     });
   }
@@ -1258,6 +1299,12 @@ export class GameScene extends Phaser.Scene {
     this.targetText.setText(numStr(rs.chipTarget));
     this.handsText.setText(String(rs.handsRemaining));
     this.discardsText.setText(String(rs.discardsRemaining));
+    if (this._lastDisplayedMoney >= 0 && rs.money !== this._lastDisplayedMoney) {
+      const delta = rs.money - this._lastDisplayedMoney;
+      ScorePopup.spawn(this, 1202, 55, (delta > 0 ? '+' : '') + '$' + delta,
+        delta > 0 ? COLORS.goldHex : '#ff6666', 'sm');
+    }
+    this._lastDisplayedMoney = rs.money;
     this.moneyText.setText(`$${rs.money}`);
     this.deckCountText.setText(`Deck\n${rs.deck.length}`);
     this.discardCountText.setText(`Disc: ${rs.discardPile.length}`);
@@ -1269,6 +1316,65 @@ export class GameScene extends Phaser.Scene {
 
   private _showMessage(msg: string): void {
     ScorePopup.spawn(this, GAME_WIDTH / 2, PLAY_AREA_Y, msg, '#ffffff');
+  }
+
+  private _showHandBanner(handType: string, level: number): void {
+    const HAND_COLORS: Record<string, number> = {
+      'Flush House': 0xff4444, 'Five of a Kind': 0xff4444, 'Flush Five': 0xff0000,
+      'Four of a Kind': 0xff8800, 'Straight Flush': 0xff8800,
+      'Full House': 0xffcc00, 'Flush': 0xffcc00, 'Straight': 0xffcc00,
+      'Three of a Kind': 0x44ffaa, 'Two Pair': 0x44ccff,
+      'Pair': 0xaaaaff, 'High Card': 0xffffff,
+    };
+    const color = HAND_COLORS[handType] ?? 0xffffff;
+    const colorHex = '#' + color.toString(16).padStart(6, '0');
+
+    const bannerY = PLAY_AREA_Y - 95;
+    const bg = this.add.graphics().setDepth(DEPTH.popup - 1);
+    bg.fillStyle(0x000000, 0.72);
+    bg.fillRect(80, bannerY - 22, GAME_WIDTH - 160, 44);
+    bg.fillStyle(color, 0.15);
+    bg.fillRect(80, bannerY - 22, GAME_WIDTH - 160, 44);
+    bg.setAlpha(0);
+
+    const label = this.add.text(GAME_WIDTH / 2, bannerY, `${handType.toUpperCase()}  lvl ${level}`, {
+      fontFamily: FONT, fontSize: '26px', color: colorHex,
+      stroke: '#000000', strokeThickness: 4,
+    }).setOrigin(0.5).setDepth(DEPTH.popup).setAlpha(0);
+
+    this.tweens.add({
+      targets: [bg, label], alpha: 1, scaleX: 1, scaleY: 1,
+      duration: 180, ease: 'Back.Out',
+      onComplete: () => {
+        this.time.delayedCall(520, () => {
+          this.tweens.add({
+            targets: [bg, label], alpha: 0,
+            duration: 260, ease: 'Quad.In',
+            onComplete: () => { bg.destroy(); label.destroy(); },
+          });
+        });
+      },
+    });
+  }
+
+  private _burstParticles(x: number, y: number, color: number): void {
+    const COUNT = 18;
+    for (let i = 0; i < COUNT; i++) {
+      const angle = (i / COUNT) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+      const dist = 80 + Math.random() * 80;
+      const tx = x + Math.cos(angle) * dist;
+      const ty = y + Math.sin(angle) * dist;
+      const size = 5 + Math.random() * 5;
+      const p = this.add.graphics().setDepth(DEPTH.popup);
+      p.fillStyle(color, 1);
+      p.fillRect(-size / 2, -size / 2, size, size);
+      p.setPosition(x, y);
+      this.tweens.add({
+        targets: p, x: tx, y: ty, alpha: 0,
+        duration: 400 + Math.random() * 250, ease: 'Quad.Out',
+        onComplete: () => p.destroy(),
+      });
+    }
   }
 
   // ---------------------------------------------------------------------------

@@ -375,7 +375,7 @@ export const EXTREME_JOKER_DEFS: JokerDefinition[] = [
     rarity: 'Ultra Rare',
     baseCost: 20,
     sellValue: 10,
-    description: 'After each hand: pull the slot machine ($5). Spin to win chips, money, consumables, a joker, or nothing at all. Pure gamble!',
+    description: 'After each hand: pull the slot ($1, ↑$1/pull, resets each blind). Wins only apply to your NEXT hand. Pure gamble!',
     isEternal: false,
     isPerishable: false,
     isRentable: false,
@@ -383,20 +383,29 @@ export const EXTREME_JOKER_DEFS: JokerDefinition[] = [
     miniGameId: 'slot_machine',
     miniGameTrigger: 'on_hand_played',
     miniGameChance: 1.0,
-    miniGameWinDesc: 'Prize!',
+    miniGameWinDesc: 'Prize (next hand)!',
     miniGameLoseDesc: 'Nothing...',
-    onSlotResult: (rs, outcomeIndex, lastScore) => {
-      rs.money = Math.max(0, rs.money - 5);
+    onBlindStart: (rs) => {
+      const j = rs.jokers.find(jj => jj.id === 'xj_slot_machine');
+      if (j) j.runtimeCounters.pullCost = 1;
+    },
+    onSlotResult: (rs, outcomeIndex) => {
+      const j = rs.jokers.find(jj => jj.id === 'xj_slot_machine');
+      const cost = j ? (j.runtimeCounters.pullCost ?? 1) : 1;
+      rs.money = Math.max(0, rs.money - cost);
+      if (j) j.runtimeCounters.pullCost = cost + 1;
 
       switch (outcomeIndex) {
         case 0:
           return {};
 
         case 1:
-          return { addChipsScored: 500 };
+          rs.nextHandBonus = { chips: 500 };
+          return {};
 
         case 2:
-          return { scaleLastScore: lastScore * 3 };
+          rs.nextHandBonus = { scoreMultiplier: 3 };
+          return {};
 
         case 3:
           rs.money += 8;

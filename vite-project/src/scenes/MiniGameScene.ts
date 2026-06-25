@@ -9,6 +9,7 @@ interface MiniGameInitData {
   jokerName: string;
   winDesc: string;
   loseDesc: string;
+  slotCost?: number;
 }
 
 export class MiniGameScene extends Phaser.Scene {
@@ -37,7 +38,7 @@ export class MiniGameScene extends Phaser.Scene {
       case 'higher_lower': this._buildHigherLower(jokerName, winDesc, loseDesc); break;
       case 'dice_roll':    this._buildDiceRoll(jokerName, winDesc, loseDesc); break;
       case 'wheel':        this._buildWheel(jokerName, winDesc, loseDesc); break;
-      case 'slot_machine': this._buildSlotMachine(jokerName); break;
+      case 'slot_machine': this._buildSlotMachine(jokerName, this._data.slotCost ?? 1); break;
     }
   }
 
@@ -604,7 +605,7 @@ export class MiniGameScene extends Phaser.Scene {
   // ─────────────────────────────────────────────────────────────
   // SLOT MACHINE
   // ─────────────────────────────────────────────────────────────
-  private _buildSlotMachine(jokerName: string): void {
+  private _buildSlotMachine(jokerName: string, slotCost: number): void {
     this._panel(560, 460);
 
     const cx = GAME_WIDTH / 2;
@@ -614,7 +615,7 @@ export class MiniGameScene extends Phaser.Scene {
     this.add.text(cx, cy - 200, jokerName, {
       fontFamily: FONT, fontSize: '20px', color: '#ff44ff',
     }).setOrigin(0.5, 0.5).setDepth(DEPTH.modal + 1);
-    this.add.text(cx, cy - 174, 'Costs $5 per pull', {
+    this.add.text(cx, cy - 174, `Costs $${slotCost} this pull`, {
       fontFamily: FONT, fontSize: '13px', color: '#aaaaaa',
     }).setOrigin(0.5, 0.5).setDepth(DEPTH.modal + 1);
 
