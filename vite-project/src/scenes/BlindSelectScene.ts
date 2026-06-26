@@ -103,7 +103,8 @@ export class BlindSelectScene extends Phaser.Scene {
     // ── Blind cards ───────────────────────────────────────────────────────────
     const cardW = 310;
     const cardH = 360;
-    const startX = GAME_WIDTH / 2 - cardW - 22;
+    const gap = 22;
+    const startX = Math.round((GAME_WIDTH - (3 * cardW + 2 * gap)) / 2);
     const cardY = 116;
 
     const chipTargets = [
@@ -120,7 +121,7 @@ export class BlindSelectScene extends Phaser.Scene {
     const blindLabels  = ['Small Blind', 'Big Blind', 'Boss Blind'];
 
     for (let i = 0; i < 3; i++) {
-      const x = startX + i * (cardW + 22);
+      const x = startX + i * (cardW + gap);
       const isCurrent = i === rs.blindIndex;
       const isPast = i < rs.blindIndex;
       const isBoss = i === 2;

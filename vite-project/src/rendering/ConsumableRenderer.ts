@@ -719,3 +719,74 @@ function darkenColor(hex: string, amount: number): string {
   const db = Math.max(0, Math.round(b * (1 - amount)));
   return `rgb(${dr},${dg},${db})`;
 }
+
+// ---------------------------------------------------------------------------
+// Pack face card
+// ---------------------------------------------------------------------------
+
+const PACK_THEME: Record<string, { bg: string; border: string; label: string; emoji: string }> = {
+  arcana:          { bg: '#2d1b69', border: '#c9a227', label: '#c9a227', emoji: '✦' },
+  mega_arcana:     { bg: '#3d2880', border: '#ffe066', label: '#ffe066', emoji: '✦✦' },
+  celestial:       { bg: '#0a0a1e', border: '#334466', label: '#88aadd', emoji: '★' },
+  mega_celestial:  { bg: '#0a0a22', border: '#4455aa', label: '#aabbee', emoji: '★★' },
+  spectral:        { bg: '#0d0d1a', border: '#3399bb', label: '#88ccdd', emoji: '👁' },
+  buffoon:         { bg: '#1a0d0d', border: '#cc4444', label: '#ffaaaa', emoji: '🃏' },
+  mega_buffoon:    { bg: '#220d0d', border: '#ff6666', label: '#ffcccc', emoji: '🃏🃏' },
+  standard:        { bg: '#111827', border: '#556677', label: '#aabbcc', emoji: '♠' },
+  mega_standard:   { bg: '#0d151f', border: '#667788', label: '#bbccdd', emoji: '♠♠' },
+};
+
+export function drawPackFace(canvas: HTMLCanvasElement, packType: string): void {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const W = canvas.width;
+  const H = canvas.height;
+  const theme = PACK_THEME[packType] ?? { bg: '#1a1a2e', border: '#888888', label: '#aaaaaa', emoji: '?' };
+
+  ctx.save();
+  clearAndClip(ctx, W, H, theme.bg);
+
+  // Subtle inner glow
+  const glow = ctx.createRadialGradient(W / 2, H * 0.4, H * 0.05, W / 2, H * 0.4, H * 0.7);
+  glow.addColorStop(0, 'rgba(255,255,255,0.06)');
+  glow.addColorStop(1, 'rgba(0,0,0,0.3)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+
+  // Border
+  roundedRect(ctx, 1, 1, W - 2, H - 2, CARD_RADIUS);
+  ctx.strokeStyle = theme.border;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Inner border
+  roundedRect(ctx, 4, 4, W - 8, H - 8, CARD_RADIUS - 2);
+  ctx.strokeStyle = theme.border;
+  ctx.lineWidth = 0.8;
+  ctx.globalAlpha = 0.4;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // Emoji / symbol in center
+  ctx.font = `bold ${Math.round(W * 0.3)}px Nunito, monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = theme.label;
+  ctx.globalAlpha = 0.85;
+  ctx.fillText(theme.emoji, W / 2, H * 0.42);
+  ctx.globalAlpha = 1;
+
+  // "PACK" label
+  ctx.font = `bold 10px Nunito, monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = theme.border;
+  ctx.fillText('PACK', W / 2, 6);
+
+  // Name at bottom
+  const name = packType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  drawNameAtBottom(ctx, name, W / 2, H - 5, theme.label, W - 6);
+
+  ctx.restore();
+}

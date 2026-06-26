@@ -13,7 +13,7 @@ import { saveRun } from '../engine/SaveSystem.ts';
 import { SFX } from '../utils/SoundEngine.ts';
 import { AudioManager } from '../audio/AudioManager.ts';
 import { drawJokerFace } from '../rendering/JokerRenderer.ts';
-import { drawTarotFace, drawPlanetFace, drawSpectralFace } from '../rendering/ConsumableRenderer.ts';
+import { drawTarotFace, drawPlanetFace, drawSpectralFace, drawPackFace } from '../rendering/ConsumableRenderer.ts';
 import { drawCardFace, drawCardBack } from '../rendering/CardRenderer.ts';
 import { VOUCHER_DEFS } from '../data/VoucherDefs.ts';
 import type { RNG } from '../engine/RNG.ts';
@@ -340,6 +340,13 @@ export class ShopScene extends Phaser.Scene {
       });
       return key;
     }
+    if (item.type === 'pack' && item.packType) {
+      const key = `shop_pack_${item.packType}`;
+      this.textureCache.getOrCreate(key, CARD_W, CARD_H, (canvas) => {
+        drawPackFace(canvas, item.packType!);
+      });
+      return key;
+    }
     return null;
   }
 
@@ -652,8 +659,33 @@ export class ShopScene extends Phaser.Scene {
                 redrawSelections();
               });
             }
-            img.on('pointerover', () => { if (!selected.has(ci)) img.setScale(1.05); });
-            img.on('pointerout', () => { if (!selected.has(ci)) img.setScale(1.0); });
+            let tooltip: Phaser.GameObjects.Text | null = null;
+            img.on('pointerover', () => {
+              if (!selected.has(ci)) img.setScale(1.05);
+              if (!tooltip) {
+                const contentName = content.kind === 'standard'
+                  ? `${content.rank} of ${content.suit}`
+                  : content.def.name;
+                const contentDesc = content.kind === 'standard'
+                  ? `A ${content.rank} of ${content.suit} playing card`
+                  : content.def.description;
+                const tipLines = `${contentName}\n${contentDesc}`;
+                tooltip = this.add.text(cx, cardsY + CARD_H / 2 + 10, tipLines, {
+                  fontFamily: FONT,
+                  fontSize: '11px',
+                  color: '#dddddd',
+                  backgroundColor: '#111122',
+                  padding: { x: 6, y: 4 },
+                  wordWrap: { width: 200 },
+                  align: 'center',
+                }).setOrigin(0.5, 0).setDepth(203);
+                overlayObjs.push(tooltip);
+              }
+            });
+            img.on('pointerout', () => {
+              if (!selected.has(ci)) img.setScale(1.0);
+              if (tooltip) { tooltip.destroy(); tooltip = null; }
+            });
           },
         });
       });

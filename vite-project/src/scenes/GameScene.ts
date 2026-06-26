@@ -1028,7 +1028,7 @@ export class GameScene extends Phaser.Scene {
       for (const cv of this.playAreaViews) {
         this.tweens.add({
           targets: cv,
-          y: cv.y + 80,
+          y: cv.y - 80,
           alpha: 0,
           duration: ANIM.discardDuration,
           ease: 'Quad.In',
