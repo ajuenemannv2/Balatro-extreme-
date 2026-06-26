@@ -7,7 +7,7 @@ import { COLORS, GAME_WIDTH, GAME_HEIGHT, CARD_W, CARD_H, ANIM, FONT, DEPTH, JOK
 import { scoreHand } from '../engine/ScoringEngine.ts';
 import { evaluateHand } from '../engine/HandEvaluator.ts';
 import { drawCards } from '../engine/DeckBuilder.ts';
-import { deactivateBlind, onHandPlayedForBlind, getBlindName } from '../engine/BlindManager.ts';
+import { deactivateBlind, onHandPlayedForBlind, getBlindName, getBlindDescription } from '../engine/BlindManager.ts';
 import { calcRoundEndMoney } from '../engine/EconomyEngine.ts';
 import { applyDeferredEffects, advanceToNextBlind, getRNG } from '../engine/RunManager.ts';
 import { saveRun } from '../engine/SaveSystem.ts';
@@ -273,6 +273,17 @@ export class GameScene extends Phaser.Scene {
     this.anteText = this.add.text(14, 28, `Ante ${rs.ante} / 8`, {
       fontFamily: FONT, fontSize: '13px', color: '#666688',
     }).setOrigin(0, 0).setDepth(d);
+
+    // Boss blind effect warning
+    if (rs.blindIndex === 2 && rs.activeBlindId) {
+      const bossDesc = getBlindDescription(rs.blindIndex, rs.activeBlindId);
+      if (bossDesc) {
+        this.add.text(14, 44, `⚠ ${bossDesc}`, {
+          fontFamily: FONT, fontSize: '10px', color: '#ff8866',
+          wordWrap: { width: 220 },
+        }).setOrigin(0, 0).setDepth(d);
+      }
+    }
 
     // ── Center: Chips counter ─────────────────────────────────────────────────
     // Chips box (blue)
@@ -914,6 +925,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private async _animateCardsToPlayArea(selectedViews: CardView[]): Promise<void> {
+    // Remove played cards from handViews now so _layoutHandViews won't re-touch them later
+    const selectedIds = new Set(selectedViews.map(cv => cv.cardData.id));
+    this.handViews = this.handViews.filter(cv => !selectedIds.has(cv.cardData.id));
+
     const count = selectedViews.length;
     const totalW = (count - 1) * 90;
     const startX = GAME_WIDTH / 2 - totalW / 2;
@@ -922,12 +937,15 @@ export class GameScene extends Phaser.Scene {
       let completed = 0;
       selectedViews.forEach((cv, i) => {
         const tx = startX + i * 90;
+        // Kill bob/selection tweens so they don't fight the play animation
+        this.tweens.killTweensOf(cv);
         this.tweens.add({
           targets: cv,
           x: tx,
           y: PLAY_AREA_Y,
           scaleX: 1.05,
           scaleY: 1.05,
+          angle: 0,
           duration: ANIM.playDuration,
           ease: 'Quad.Out',
           onComplete: () => {

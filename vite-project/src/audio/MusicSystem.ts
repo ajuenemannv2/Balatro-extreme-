@@ -41,7 +41,6 @@ export class MusicSystem {
         src: [src],
         loop: true,
         volume: 0,
-        html5: true,      // stream instead of full decode — required for large files
         preload: true,
         format: ['m4a'],
       }));
