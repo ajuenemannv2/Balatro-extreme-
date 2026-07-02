@@ -179,7 +179,10 @@ export class CardView extends Phaser.GameObjects.Container {
 
     if (selected) {
       SFX.cardSelect();
-      this._anchorY = this.y;
+      // _anchorY is maintained by the hand layout (setAnchorY) — capturing
+      // this.y here would bake in a mid-animation position. If a deal tween
+      // was just killed, also make sure the card is fully visible.
+      this.setAlpha(1);
 
       // Scale pop to 1.15, then lift + settle to 1.08 with spring feel
       this.scene.tweens.add({

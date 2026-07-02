@@ -5,9 +5,9 @@ import type { ScoringStep } from '../types/Score.ts';
 import type { ConsumableInstance } from '../types/Consumable.ts';
 import { COLORS, GAME_WIDTH, GAME_HEIGHT, CARD_W, CARD_H, ANIM, FONT, DEPTH, JOKER_ROW_Y, HAND_POSITIONS_Y, PLAY_AREA_Y } from '../config.ts';
 import { scoreHand } from '../engine/ScoringEngine.ts';
-import { evaluateHand } from '../engine/HandEvaluator.ts';
-import { drawCards } from '../engine/DeckBuilder.ts';
-import { deactivateBlind, onHandPlayedForBlind, getBlindName, getBlindDescription } from '../engine/BlindManager.ts';
+import { evaluateHand, RANK_VALUES } from '../engine/HandEvaluator.ts';
+import { drawCards, shuffleDeck } from '../engine/DeckBuilder.ts';
+import { deactivateBlind, onHandPlayedForBlind, onCardDrawnForBlind, getBlindName, getBlindDescription } from '../engine/BlindManager.ts';
 import { calcRoundEndMoney } from '../engine/EconomyEngine.ts';
 import { applyDeferredEffects, advanceToNextBlind, getRNG } from '../engine/RunManager.ts';
 import { saveRun } from '../engine/SaveSystem.ts';
@@ -69,6 +69,9 @@ export class GameScene extends Phaser.Scene {
   private _gameWonHandler: ((rs: RunState) => void) | null = null;
   private _miniGameUsesThisRound: Map<string, number> = new Map();
   private _lastDisplayedMoney = -1;
+  private consumableSlotsG: Phaser.GameObjects.Graphics | null = null;
+  private _lastCounterText = { chips: '', mult: '', score: '' };
+  private _counterTweenObj = { chips: 0, mult: 0 };
 
   constructor() {
     super({ key: 'GameScene' });
@@ -103,12 +106,15 @@ export class GameScene extends Phaser.Scene {
     this.consumableViews = [];
     this._lastDisplayedMoney = -1;
 
-    this.textureCache = new TextureCache(this, 512);
+    // Reuse the cache across blinds — card textures are keyed globally and
+    // rebuilding them forces a full canvas redraw + GPU re-upload every round
+    if (!this.textureCache) this.textureCache = new TextureCache(this, 512);
     this.currentChips = 0;
     this.currentMult = 0;
     this.handsPlayedThisRound = 0;
     this.discardsUsedThisRound = 0;
     this._miniGameUsesThisRound = new Map();
+    this._lastCounterText = { chips: '', mult: '', score: '' };
 
     this.cameras.main.setBackgroundColor(COLORS.bgHex);
 
@@ -126,14 +132,26 @@ export class GameScene extends Phaser.Scene {
     this._dealCards();
     this._updateUI();
 
+    if (this._gameWonHandler) EventBus.off('game_won', this._gameWonHandler);
     this._gameWonHandler = (_rs: RunState) => {
       this.scene.start('WinScene', { runState: this.runState });
     };
     EventBus.on<RunState>('game_won', this._gameWonHandler);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.shutdown());
 
     // Fire blind-start mini-games after a short delay so the scene is visible
     this.time.delayedCall(600, () => {
-      void this._runMiniGames('on_blind_start', 0);
+      const pending = this.runState.jokers.some(j =>
+        !j.isDisabled && j.miniGameId && j.miniGameTrigger === 'on_blind_start');
+      if (!pending) return;
+      this.isAnimating = true;
+      this.playBtn.setEnabled(false);
+      this.discardBtn.setEnabled(false);
+      void this._runMiniGames('on_blind_start', 0).then(() => {
+        this.isAnimating = false;
+        this.playBtn.setEnabled(true);
+        this.discardBtn.setEnabled(this.runState.discardsRemaining > 0);
+      });
     });
 
     this._callBlindStartHooks();
@@ -162,23 +180,70 @@ export class GameScene extends Phaser.Scene {
   // ---------------------------------------------------------------------------
 
   private _drawBackground(): void {
-    // ── Near-black outer frame ───────────────────────────────────────────────
-    const outer = this.add.graphics();
-    outer.fillStyle(0x0c0c14, 1);
-    outer.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-    outer.setDepth(DEPTH.bg);
+    // The static background is baked into a single texture once — a live
+    // Graphics object replays its whole command list every frame, and the
+    // vignette alone is 32 full-screen alpha rects
+    const BG_KEY = 'gamescene_bg_baked';
+    if (!this.textures.exists(BG_KEY)) {
+      const g = this.make.graphics({ x: 0, y: 0 }, false);
 
-    // ── Green felt table band (main play area) ────────────────────────────────
-    const felt = this.add.graphics();
-    felt.fillStyle(0x35654d, 1);
-    felt.fillRect(0, 88, GAME_WIDTH, 562);   // y=88 to y=650
-    felt.setDepth(DEPTH.bg + 1);
+      // Near-black outer frame
+      g.fillStyle(0x0c0c14, 1);
+      g.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
-    // Subtle felt highlight in center
-    for (let s = 4; s >= 1; s--) {
-      felt.fillStyle(0x3d7a5a, 0.07 * (5 - s));
-      felt.fillEllipse(GAME_WIDTH / 2, 380, GAME_WIDTH * 0.85 * (s / 4), 400 * (s / 4));
+      // Green felt table band (main play area)
+      g.fillStyle(0x35654d, 1);
+      g.fillRect(0, 88, GAME_WIDTH, 562);   // y=88 to y=650
+
+      // Subtle felt highlight in center
+      for (let s = 4; s >= 1; s--) {
+        g.fillStyle(0x3d7a5a, 0.07 * (5 - s));
+        g.fillEllipse(GAME_WIDTH / 2, 380, GAME_WIDTH * 0.85 * (s / 4), 400 * (s / 4));
+      }
+
+      // HUD bar at top
+      g.fillStyle(0x0a0a18, 0.97);
+      g.fillRect(0, 0, GAME_WIDTH, 88);
+      g.lineStyle(2, 0x2a2a44, 1);
+      g.lineBetween(0, 88, GAME_WIDTH, 88);
+
+      // Joker/consumable row background
+      g.fillStyle(0x1a1428, 0.55);
+      g.fillRoundedRect(0, 93, GAME_WIDTH, 64, 0);
+
+      // Play area zone
+      g.fillStyle(0x2a5440, 0.4);
+      g.fillRoundedRect(150, PLAY_AREA_Y - 62, GAME_WIDTH - 300, 124, 10);
+      g.lineStyle(1, 0x4a8060, 0.5);
+      g.strokeRoundedRect(150, PLAY_AREA_Y - 62, GAME_WIDTH - 300, 124, 10);
+
+      // Hand area zone
+      g.lineStyle(1, 0x3a6050, 0.35);
+      g.strokeRoundedRect(80, HAND_POSITIONS_Y - 55, GAME_WIDTH - 160, 115, 10);
+
+      // Bottom action bar background
+      g.fillStyle(0x0c0c14, 0.9);
+      g.fillRect(0, 650, GAME_WIDTH, 70);
+      g.lineStyle(1, 0x2a2a44, 0.8);
+      g.lineBetween(0, 650, GAME_WIDTH, 650);
+
+      // Vignette — dark edges for depth (0.55 was the old container alpha)
+      const vigSteps = 8;
+      for (let i = 0; i < vigSteps; i++) {
+        const t = i / vigSteps;
+        const alpha = (1 - t) * 0.45 * 0.55;
+        const inset = t * Math.min(GAME_WIDTH, GAME_HEIGHT) * 0.42;
+        g.fillStyle(0x000000, alpha);
+        g.fillRect(0, 0, GAME_WIDTH, inset);
+        g.fillRect(0, GAME_HEIGHT - inset, GAME_WIDTH, inset);
+        g.fillRect(0, 0, inset, GAME_HEIGHT);
+        g.fillRect(GAME_WIDTH - inset, 0, inset, GAME_HEIGHT);
+      }
+
+      g.generateTexture(BG_KEY, GAME_WIDTH, GAME_HEIGHT);
+      g.destroy();
     }
+    this.add.image(0, 0, BG_KEY).setOrigin(0, 0).setDepth(DEPTH.bg);
 
     // Subtle breathing pulse on felt (depth rhythm, gives table a "living" feel)
     const feltPulse = this.add.graphics().setDepth(DEPTH.bg + 1).setAlpha(0);
@@ -189,60 +254,10 @@ export class GameScene extends Phaser.Scene {
       repeat: -1, ease: 'Sine.InOut',
     });
 
-    // ── HUD bar at top ────────────────────────────────────────────────────────
-    const hudBar = this.add.graphics();
-    hudBar.fillStyle(0x0a0a18, 0.97);
-    hudBar.fillRect(0, 0, GAME_WIDTH, 88);
-    hudBar.lineStyle(2, 0x2a2a44, 1);
-    hudBar.lineBetween(0, 88, GAME_WIDTH, 88);
-    hudBar.setDepth(DEPTH.hud - 5);
-
-    // ── Joker/consumable row background ──────────────────────────────────────
-    const sidePanel = this.add.graphics();
-    sidePanel.fillStyle(0x1a1428, 0.55);
-    sidePanel.fillRoundedRect(0, 93, GAME_WIDTH, 64, 0);
-    sidePanel.setDepth(DEPTH.bg + 2);
-
-    // ── Play area zone ────────────────────────────────────────────────────────
-    const playZone = this.add.graphics();
-    playZone.fillStyle(0x2a5440, 0.4);
-    playZone.fillRoundedRect(150, PLAY_AREA_Y - 62, GAME_WIDTH - 300, 124, 10);
-    playZone.lineStyle(1, 0x4a8060, 0.5);
-    playZone.strokeRoundedRect(150, PLAY_AREA_Y - 62, GAME_WIDTH - 300, 124, 10);
-    playZone.setDepth(DEPTH.bg + 2);
-
-    // ── Hand area zone ────────────────────────────────────────────────────────
-    const handZone = this.add.graphics();
-    handZone.lineStyle(1, 0x3a6050, 0.35);
-    handZone.strokeRoundedRect(80, HAND_POSITIONS_Y - 55, GAME_WIDTH - 160, 115, 10);
-    handZone.setDepth(DEPTH.bg + 2);
-
     // ── Play area label ───────────────────────────────────────────────────────
     this.add.text(GAME_WIDTH / 2, PLAY_AREA_Y - 68, 'Play Area', {
       fontFamily: FONT, fontSize: '12px', color: '#4a7060',
     }).setOrigin(0.5).setDepth(DEPTH.bg + 3);
-
-    // ── Bottom action bar background ──────────────────────────────────────────
-    const bottomBar = this.add.graphics();
-    bottomBar.fillStyle(0x0c0c14, 0.9);
-    bottomBar.fillRect(0, 650, GAME_WIDTH, 70);
-    bottomBar.lineStyle(1, 0x2a2a44, 0.8);
-    bottomBar.lineBetween(0, 650, GAME_WIDTH, 650);
-    bottomBar.setDepth(DEPTH.bg + 2);
-
-    // ── Vignette — dark edges for depth ──────────────────────────────────────
-    const vig = this.add.graphics().setDepth(DEPTH.bg + 4).setAlpha(0.55);
-    const vigSteps = 8;
-    for (let i = 0; i < vigSteps; i++) {
-      const t = i / vigSteps;
-      const alpha = (1 - t) * 0.45;
-      const inset = t * Math.min(GAME_WIDTH, GAME_HEIGHT) * 0.42;
-      vig.fillStyle(0x000000, alpha);
-      vig.fillRect(0, 0, GAME_WIDTH, inset);
-      vig.fillRect(0, GAME_HEIGHT - inset, GAME_WIDTH, inset);
-      vig.fillRect(0, 0, inset, GAME_HEIGHT);
-      vig.fillRect(GAME_WIDTH - inset, 0, inset, GAME_HEIGHT);
-    }
 
     // ── Faint suit corner decorations ─────────────────────────────────────────
     const suits = ['♠', '♥', '♦', '♣'];
@@ -274,13 +289,15 @@ export class GameScene extends Phaser.Scene {
       fontFamily: FONT, fontSize: '13px', color: '#666688',
     }).setOrigin(0, 0).setDepth(d);
 
-    // Boss blind effect warning
+    // Boss blind effect warning — 9px + wide wrap keeps it to one line for
+    // every current boss description, clear of the ante label above (bottom
+    // ~46) and the joker row below (top ~72)
     if (rs.blindIndex === 2 && rs.activeBlindId) {
       const bossDesc = getBlindDescription(rs.blindIndex, rs.activeBlindId);
       if (bossDesc) {
-        this.add.text(14, 44, `⚠ ${bossDesc}`, {
-          fontFamily: FONT, fontSize: '10px', color: '#ff8866',
-          wordWrap: { width: 220 },
+        this.add.text(14, 48, `⚠ ${bossDesc}`, {
+          fontFamily: FONT, fontSize: '9px', color: '#ff8866',
+          wordWrap: { width: 320 },
         }).setOrigin(0, 0).setDepth(d);
       }
     }
@@ -456,11 +473,14 @@ export class GameScene extends Phaser.Scene {
 
     this.consumableViews.forEach(cv => cv.destroy());
     this.consumableViews = [];
+    this.consumableSlotsG?.destroy();
 
     const startX = GAME_WIDTH - 90 - (rs.maxConsumableSlots - 1) * 80;
-    const cY = JOKER_ROW_Y;
+    // +14 so the card tops clear the HUD stats panel (bottom edge y=80)
+    const cY = JOKER_ROW_Y + 14;
 
     const slotsG = this.add.graphics();
+    this.consumableSlotsG = slotsG;
     for (let i = 0; i < rs.maxConsumableSlots; i++) {
       const cx = startX + i * 80;
       slotsG.fillStyle(COLORS.panelDark, 0.7);
@@ -510,6 +530,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private _useConsumable(cons: ConsumableInstance): void {
+    if (this.isAnimating) return;
     const rs = this.runState;
     const selected = this.handViews.filter(cv => cv.isSelected).map(cv => cv.cardData);
 
@@ -661,19 +682,19 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (rs.deck.length === 0 && rs.discardPile.length > 0) {
-      rs.deck = [...rs.discardPile].sort(() => Math.random() - 0.5);
+      const rng = getRNG(rs);
+      rs.deck = shuffleDeck([...rs.discardPile], rng);
+      rs.rngState = rng.getState();
       rs.discardPile = [];
     }
 
     const { drawn, remaining } = drawCards(rs.deck, needed);
     rs.deck = remaining;
 
-    for (const card of drawn) {
-      if (rs.activeBlindId === 'boss_wheel' && Math.random() < 1 / 7) {
-        card.faceUp = false;
-      } else {
-        card.faceUp = true;
-      }
+    for (let card of drawn) {
+      card.faceUp = true;
+      // Boss draw effects (The Wheel / The Mark flip cards face down)
+      card = onCardDrawnForBlind(rs, card);
       rs.hand.push(card);
     }
 
@@ -713,19 +734,33 @@ export class GameScene extends Phaser.Scene {
       const existing = existingById.get(card.id);
 
       if (existing) {
-        // Card already in hand — reposition smoothly without deal animation
+        // Card already in hand — reposition smoothly without deal animation.
+        // Selected cards keep their raised y + bob tween: only slide on x,
+        // otherwise the reposition tween fights the infinite bob tween.
         existing.setAnchorY(targetY);
-        this.tweens.add({
-          targets: existing,
-          x: targetX,
-          y: targetY,
-          duration: 200,
-          ease: 'Quad.Out',
-        });
+        if (existing.isSelected) {
+          this.tweens.add({
+            targets: existing,
+            x: targetX,
+            duration: 200,
+            ease: 'Quad.Out',
+          });
+        } else {
+          this.tweens.killTweensOf(existing);
+          this.tweens.add({
+            targets: existing,
+            x: targetX,
+            y: targetY,
+            alpha: 1,
+            duration: 200,
+            ease: 'Quad.Out',
+          });
+        }
         return existing;
       } else {
         // New card drawn from deck — fly in with staggered deal animation
         const cv = new CardView(this, GAME_WIDTH - 60, 640, card, this.textureCache);
+        cv.setAnchorY(targetY);
         cv.setFaceUp(card.faceUp);
         cv.setAlpha(0);
         const dealDelay = newCardIndex * ANIM.dealStagger;
@@ -810,6 +845,12 @@ export class GameScene extends Phaser.Scene {
       result = scoreHand(selectedCards, rs, rng);
     } catch (err) {
       console.error('scoreHand error:', err);
+      // Return the played cards to the hand row — their views were already
+      // moved out of handViews by _animateCardsToPlayArea
+      this.handViews.push(...this.playAreaViews);
+      this.playAreaViews = [];
+      selected.forEach(cv => cv.setSelected(false));
+      this._layoutHandViews();
       this.isAnimating = false;
       this.playBtn.setEnabled(true);
       this.discardBtn.setEnabled(true);
@@ -818,7 +859,9 @@ export class GameScene extends Phaser.Scene {
 
     rs.rngState = rng.getState();
 
-    this.handTypeText.setText(result.handType);
+    // Banner announces the hand type; blank the preview label so scoring
+    // popups spawning near PLAY_AREA_Y don't overlap stale text
+    this.handTypeText.setText('');
     this._showHandBanner(result.handType, rs.handLevels[result.handType] ?? 1);
 
     this.currentChips = 0;
@@ -829,9 +872,16 @@ export class GameScene extends Phaser.Scene {
 
     let finalScore = result.finalScore;
     if (rs.nextHandBonus) {
+      const bonusLabel = rs.nextHandBonus.chips
+        ? `Slot bonus: +${rs.nextHandBonus.chips} chips!`
+        : `Slot bonus: ×${rs.nextHandBonus.scoreMultiplier} score!`;
       if (rs.nextHandBonus.chips) finalScore += rs.nextHandBonus.chips;
       if (rs.nextHandBonus.scoreMultiplier) finalScore = Math.floor(finalScore * rs.nextHandBonus.scoreMultiplier);
       rs.nextHandBonus = undefined;
+      ScorePopup.spawn(this, GAME_WIDTH / 2, PLAY_AREA_Y - 70, bonusLabel, COLORS.goldHex, 'md');
+    }
+    if (result.deferredMoney > 0) {
+      rs.money += result.deferredMoney;
     }
     ScorePopup.spawn(this, GAME_WIDTH / 2, PLAY_AREA_Y - 30, `${numStr(finalScore)}`, '#ffffff');
 
@@ -873,7 +923,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (rs.activeBlindId === 'boss_hook' && selectedCards.length > 0) {
-      const hookCards = [...rs.hand].sort(() => Math.random() - 0.5).slice(0, 2);
+      const hookRng = getRNG(rs);
+      const hookCards = hookRng.shuffle([...rs.hand]).slice(0, 2);
+      rs.rngState = hookRng.getState();
       for (const hc of hookCards) {
         const idx = rs.hand.findIndex(c => c.id === hc.id);
         if (idx !== -1) {
@@ -894,6 +946,11 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    // Lock in the win as soon as the hand's score clears the target —
+    // mini-games below may mutate chipsScored (e.g. double-or-nothing
+    // resetScore) but must not revoke a blind that is already beaten
+    const wonBeforeMiniGames = rs.chipsScored >= rs.chipTarget;
+
     await this._clearPlayArea();
 
     // Trigger on_hand_played mini-games
@@ -904,7 +961,7 @@ export class GameScene extends Phaser.Scene {
       await this._runMiniGames('on_score_milestone', finalScore);
     }
 
-    const won = rs.chipsScored >= rs.chipTarget;
+    const won = wonBeforeMiniGames || rs.chipsScored >= rs.chipTarget;
     if (won) {
       await this._onBlindWon();
       return;
@@ -962,7 +1019,8 @@ export class GameScene extends Phaser.Scene {
 
   private async _runMiniGames(trigger: string, lastScore: number): Promise<void> {
     const rs = this.runState;
-    for (const joker of rs.jokers) {
+    // Iterate a copy — effects (e.g. the slot jackpot) can add jokers mid-loop
+    for (const joker of [...rs.jokers]) {
       if (!joker.miniGameId || joker.miniGameTrigger !== trigger) continue;
       if (joker.isDisabled) continue;
 
@@ -979,6 +1037,14 @@ export class GameScene extends Phaser.Scene {
       const slotCost = joker.miniGameId === 'slot_machine'
         ? (joker.runtimeCounters?.pullCost ?? 1)
         : undefined;
+
+      // Can't afford the pull — skip instead of granting a free spin
+      if (slotCost !== undefined && rs.money < slotCost) {
+        ScorePopup.spawn(this, GAME_WIDTH / 2, PLAY_AREA_Y - 60,
+          `${joker.name}: need $${slotCost} to pull`, '#888888', 'sm');
+        continue;
+      }
+
       const result = await this._launchMiniGame(joker.miniGameId, joker.id, joker.name,
         joker.miniGameWinDesc ?? 'Bonus!', joker.miniGameLoseDesc ?? 'Penalty!', slotCost);
 
@@ -1009,6 +1075,11 @@ export class GameScene extends Phaser.Scene {
 
       if (effect?.deferredFn) {
         effect.deferredFn(rs);
+        // Rewards may add consumables, jokers, or enhance hand cards —
+        // refresh the affected rows so the payout is visible immediately
+        this._rebuildConsumableRow();
+        this._buildJokerRow();
+        this._refreshHandViews();
       }
 
       const msg = won
@@ -1067,8 +1138,12 @@ export class GameScene extends Phaser.Scene {
     let chips = 0;
     let mult = 0;
 
+    // Long step chains compress so total scoring time stays bounded —
+    // a 20-step hand at the full 280ms delay would freeze input for ~6s
+    const stepDelay = steps.length > 12 ? 120 : steps.length > 7 ? 190 : ANIM.scoreStepDelay;
+
     for (const step of steps) {
-      await this._delay(ANIM.scoreStepDelay);
+      await this._delay(stepDelay);
 
       if (step.addChips !== undefined) chips = step.chipsAfter;
       if (step.addMult !== undefined || step.mulMult !== undefined) mult = step.multAfter;
@@ -1091,17 +1166,14 @@ export class GameScene extends Phaser.Scene {
           AudioManager.playSFX('joker_activate');
           jv?.flash();
         } else if (hint.type === 'chip_add' && hint.delta > 0) {
-          SFX.chipScore();
           AudioManager.playSFX('chip_hit');
           const sz = hint.delta >= 50 ? 'lg' : hint.delta >= 20 ? 'md' : 'sm';
           ScorePopup.spawn(this, cardX, cardY - CARD_H / 2 - 28, `+${numStr(hint.delta)}`, '#4a90d9', sz);
         } else if (hint.type === 'mult_add' && hint.delta > 0) {
-          SFX.multScore();
           AudioManager.playSFX('mult_trigger');
           const sz = hint.delta >= 10 ? 'lg' : hint.delta >= 4 ? 'md' : 'sm';
           ScorePopup.spawn(this, cardX, cardY - CARD_H / 2 - 28, `+${hint.delta}×`, '#e74c3c', sz);
         } else if (hint.type === 'mult_mul') {
-          SFX.multScore();
           AudioManager.playSFX('mult_trigger');
           if (hint.factor >= 3) this.cameras.main.shake(80, 0.004);
           ScorePopup.spawn(this, cardX, cardY - CARD_H / 2 - 28, `×${hint.factor}`, '#ff8844', 'lg');
@@ -1110,43 +1182,53 @@ export class GameScene extends Phaser.Scene {
         }
       }
 
-      await this._tweenCounters(chips, mult, step.chipsAfter * step.multAfter);
+      // Counter tween runs concurrently with the next step's delay —
+      // awaiting it serialized an extra 400ms into every scoring step
+      this._tweenCounters(chips, mult);
     }
 
+    // Let the final counter tween settle before the score popup lands
+    await this._delay(ANIM.counterDuration);
     this.currentChips = chips;
     this.currentMult = mult;
+    this._updateCounterDisplays(chips, mult);
   }
 
-  private _tweenCounters(chips: number, mult: number, _score: number): Promise<void> {
-    return new Promise<void>((resolve) => {
-      const obj = { chips: this.currentChips, mult: this.currentMult };
-      this.tweens.add({
-        targets: obj,
-        chips,
-        mult,
-        duration: ANIM.counterDuration,
-        ease: 'Quad.Out',
-        onUpdate: () => {
-          this._updateCounterDisplays(obj.chips, obj.mult);
-        },
-        onComplete: () => {
-          this.currentChips = chips;
-          this.currentMult = mult;
-          this._updateCounterDisplays(chips, mult);
-          resolve();
-        },
-      });
+  private _tweenCounters(chips: number, mult: number): void {
+    this.tweens.killTweensOf(this._counterTweenObj);
+    this._counterTweenObj.chips = this.currentChips;
+    this._counterTweenObj.mult = this.currentMult;
+    const obj = this._counterTweenObj;
+    this.tweens.add({
+      targets: obj,
+      chips,
+      mult,
+      duration: ANIM.counterDuration,
+      ease: 'Quad.Out',
+      onUpdate: () => {
+        this.currentChips = obj.chips;
+        this.currentMult = obj.mult;
+        this._updateCounterDisplays(obj.chips, obj.mult);
+      },
+      onComplete: () => {
+        this.currentChips = chips;
+        this.currentMult = mult;
+        this._updateCounterDisplays(chips, mult);
+      },
     });
   }
 
   private _updateCounterDisplays(chips: number, mult: number): void {
-    const chipsRound = Math.floor(chips);
-    const multRound = Math.floor(mult);
-    const score = chipsRound * multRound;
+    const chipsStr = numStr(Math.floor(chips));
+    const multStr = numStr(Math.floor(mult));
+    const scoreStr = numStr(Math.floor(chips) * Math.floor(mult));
 
-    this.chipsText.setText(numStr(chipsRound));
-    this.multText.setText(numStr(multRound));
-    this.scoreText.setText(numStr(score));
+    // setText re-rasterizes the text texture — skip frames where the
+    // displayed value didn't actually change
+    const last = this._lastCounterText;
+    if (last.chips !== chipsStr) { this.chipsText.setText(chipsStr); last.chips = chipsStr; }
+    if (last.mult !== multStr) { this.multText.setText(multStr); last.mult = multStr; }
+    if (last.score !== scoreStr) { this.scoreText.setText(scoreStr); last.score = scoreStr; }
   }
 
   // ---------------------------------------------------------------------------
@@ -1182,6 +1264,8 @@ export class GameScene extends Phaser.Scene {
     await new Promise<void>((resolve) => {
       let done = 0;
       for (const cv of selected) {
+        // Kill the selection bob tween so it doesn't fight the fall
+        this.tweens.killTweensOf(cv);
         this.tweens.add({
           targets: cv,
           y: cv.y + 100,
@@ -1224,26 +1308,20 @@ export class GameScene extends Phaser.Scene {
   // ---------------------------------------------------------------------------
 
   private _sortHandByRank(): void {
+    if (this.isAnimating) return;
     const rs = this.runState;
-    const RANK_ORDER: Record<string, number> = {
-      '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8,
-      '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14,
-    };
-    rs.hand.sort((a, b) => (RANK_ORDER[a.rank ?? ''] ?? 0) - (RANK_ORDER[b.rank ?? ''] ?? 0));
+    rs.hand.sort((a, b) => (RANK_VALUES[a.rank ?? ''] ?? 0) - (RANK_VALUES[b.rank ?? ''] ?? 0));
     this._layoutHandViews();
   }
 
   private _sortHandBySuit(): void {
+    if (this.isAnimating) return;
     const rs = this.runState;
     const SUIT_ORDER: Record<string, number> = { Spades: 0, Hearts: 1, Clubs: 2, Diamonds: 3 };
     rs.hand.sort((a, b) => {
       const suitDiff = (SUIT_ORDER[a.suit ?? ''] ?? 0) - (SUIT_ORDER[b.suit ?? ''] ?? 0);
       if (suitDiff !== 0) return suitDiff;
-      const RANK_ORDER: Record<string, number> = {
-        '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8,
-        '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14,
-      };
-      return (RANK_ORDER[a.rank ?? ''] ?? 0) - (RANK_ORDER[b.rank ?? ''] ?? 0);
+      return (RANK_VALUES[a.rank ?? ''] ?? 0) - (RANK_VALUES[b.rank ?? ''] ?? 0);
     });
     this._layoutHandViews();
   }
@@ -1268,7 +1346,6 @@ export class GameScene extends Phaser.Scene {
 
     this._callRoundEndHooks();
 
-    SFX.blindWon();
     AudioManager.playSFX('win_round');
     this.cameras.main.shake(350, 0.015);
     ScorePopup.spawn(this, GAME_WIDTH / 2, PLAY_AREA_Y, `Round Won! +$${earned}`, '#44cc66');
@@ -1276,11 +1353,11 @@ export class GameScene extends Phaser.Scene {
 
     for (const card of rs.hand) rs.discardPile.push(card);
     rs.hand = [];
-    rs.deck = [...rs.deck, ...rs.discardPile].sort(() => Math.random() - 0.5);
-    rs.discardPile = [];
     rs.playedThisRound = [];
 
     const rng = getRNG(rs);
+    rs.deck = shuffleDeck([...rs.deck, ...rs.discardPile], rng);
+    rs.discardPile = [];
     advanceToNextBlind(rs, rng);
     rs.rngState = rng.getState();
 
@@ -1411,10 +1488,11 @@ export class GameScene extends Phaser.Scene {
       EventBus.off('game_won', this._gameWonHandler);
       this._gameWonHandler = null;
     }
-    this.handViews.forEach(cv => cv.destroy());
-    this.playAreaViews.forEach(cv => cv.destroy());
-    this.jokerViews.forEach(jv => jv.destroy());
-    this.consumableViews.forEach(cv => cv.destroy());
-    this.textureCache?.clear();
+    this.handViews = [];
+    this.playAreaViews = [];
+    this.jokerViews = [];
+    this.consumableViews = [];
+    this.consumableSlotsG = null;
+    // textureCache intentionally NOT cleared — textures are reused next blind
   }
 }

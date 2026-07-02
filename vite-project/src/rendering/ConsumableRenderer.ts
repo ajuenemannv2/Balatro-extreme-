@@ -729,9 +729,11 @@ const PACK_THEME: Record<string, { bg: string; border: string; label: string; em
   mega_arcana:     { bg: '#3d2880', border: '#ffe066', label: '#ffe066', emoji: '✦✦' },
   celestial:       { bg: '#0a0a1e', border: '#334466', label: '#88aadd', emoji: '★' },
   mega_celestial:  { bg: '#0a0a22', border: '#4455aa', label: '#aabbee', emoji: '★★' },
-  spectral:        { bg: '#0d0d1a', border: '#3399bb', label: '#88ccdd', emoji: '👁' },
-  buffoon:         { bg: '#1a0d0d', border: '#cc4444', label: '#ffaaaa', emoji: '🃏' },
-  mega_buffoon:    { bg: '#220d0d', border: '#ff6666', label: '#ffcccc', emoji: '🃏🃏' },
+  // Text glyphs only — color emoji ignore fillStyle and render as tofu on
+  // platforms without a matching emoji font
+  spectral:        { bg: '#0d0d1a', border: '#3399bb', label: '#88ccdd', emoji: '◉' },
+  buffoon:         { bg: '#1a0d0d', border: '#cc4444', label: '#ffaaaa', emoji: '♚' },
+  mega_buffoon:    { bg: '#220d0d', border: '#ff6666', label: '#ffcccc', emoji: '♚♚' },
   standard:        { bg: '#111827', border: '#556677', label: '#aabbcc', emoji: '♠' },
   mega_standard:   { bg: '#0d151f', border: '#667788', label: '#bbccdd', emoji: '♠♠' },
 };

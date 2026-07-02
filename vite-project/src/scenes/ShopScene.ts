@@ -5,6 +5,7 @@ import { COLORS, GAME_WIDTH, GAME_HEIGHT, CARD_W, CARD_H, FONT, DEPTH } from '..
 import { Button } from '../ui/Button.ts';
 import { JokerView } from '../ui/JokerView.ts';
 import { ScorePopup } from '../ui/ScorePopup.ts';
+import { showTooltip, hideTooltip } from '../ui/TooltipView.ts';
 import { TextureCache } from '../rendering/TextureCache.ts';
 import { generateShop, rerollShop, generatePackContents } from '../engine/ShopGenerator.ts';
 import { canAfford, buyItem, sellJoker, sellConsumable } from '../engine/EconomyEngine.ts';
@@ -72,13 +73,16 @@ export class ShopScene extends Phaser.Scene {
       return;
     }
 
-    this.textureCache = new TextureCache(this, 256);
+    // Reuse the cache across shop visits — texture keys are global and
+    // recreating the cache forces canvas redraw + GPU re-upload each visit
+    if (!this.textureCache) this.textureCache = new TextureCache(this, 256);
     this.rng = getRNG(rs);
     this.shopState = generateShop(rs, this.rng);
     rs.rngState = this.rng.getState();
 
     this.cameras.main.setBackgroundColor(COLORS.bgHex);
     AudioManager.switchTrack('shop').catch(() => {});
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.shutdown());
 
     this._drawBackground();
     this._buildHeader();
@@ -555,6 +559,7 @@ export class ShopScene extends Phaser.Scene {
     const overlayObjs: Phaser.GameObjects.GameObject[] = [];
 
     const closeOverlay = () => {
+      hideTooltip();
       this.tweens.add({
         targets: scrim, fillAlpha: 0, duration: 200,
         onComplete: () => overlayObjs.forEach(o => { try { o.destroy(); } catch { /* already destroyed */ } }),
@@ -659,32 +664,20 @@ export class ShopScene extends Phaser.Scene {
                 redrawSelections();
               });
             }
-            let tooltip: Phaser.GameObjects.Text | null = null;
             img.on('pointerover', () => {
               if (!selected.has(ci)) img.setScale(1.05);
-              if (!tooltip) {
-                const contentName = content.kind === 'standard'
-                  ? `${content.rank} of ${content.suit}`
-                  : content.def.name;
-                const contentDesc = content.kind === 'standard'
-                  ? `A ${content.rank} of ${content.suit} playing card`
-                  : content.def.description;
-                const tipLines = `${contentName}\n${contentDesc}`;
-                tooltip = this.add.text(cx, cardsY + CARD_H / 2 + 10, tipLines, {
-                  fontFamily: FONT,
-                  fontSize: '11px',
-                  color: '#dddddd',
-                  backgroundColor: '#111122',
-                  padding: { x: 6, y: 4 },
-                  wordWrap: { width: 200 },
-                  align: 'center',
-                }).setOrigin(0.5, 0).setDepth(203);
-                overlayObjs.push(tooltip);
-              }
+              const contentName = content.kind === 'standard'
+                ? `${content.rank} of ${content.suit}`
+                : content.def.name;
+              const contentDesc = content.kind === 'standard'
+                ? 'Added to your deck'
+                : content.def.description;
+              // Above the card so it never covers the Take button below
+              showTooltip(this, cx - 100, cardsY - CARD_H / 2 - 4, contentName, contentDesc, 210);
             });
             img.on('pointerout', () => {
               if (!selected.has(ci)) img.setScale(1.0);
-              if (tooltip) { tooltip.destroy(); tooltip = null; }
+              hideTooltip();
             });
           },
         });
@@ -903,10 +896,11 @@ export class ShopScene extends Phaser.Scene {
   }
 
   shutdown(): void {
-    this.jokerViews.forEach(jv => jv.destroy());
-    this.itemContainers.forEach(c => c.destroy());
-    this.shopBuyBtns.forEach(b => b.destroy());
-    this.voucherContainer?.destroy();
-    this.textureCache?.clear();
+    // Phaser destroys scene children on shutdown — just drop the references
+    this.jokerViews = [];
+    this.itemContainers = [];
+    this.shopBuyBtns = [];
+    this.voucherContainer = null;
+    // textureCache intentionally NOT cleared — textures are reused next visit
   }
 }

@@ -42,6 +42,12 @@ export function onHandPlayedForBlind(runState: RunState, played: import('../type
   def?.onHandPlayed?.(runState, played);
 }
 
+export function onCardDrawnForBlind(runState: RunState, card: import('../types/Card.ts').PlayingCard): import('../types/Card.ts').PlayingCard {
+  if (runState.blindIndex !== 2) return card;
+  const def = BOSS_BLIND_DEFS.find(b => b.id === runState.activeBlindId);
+  return def?.onCardDrawn ? def.onCardDrawn(runState, card) : card;
+}
+
 export function getBlindName(_ante: number, blindIndex: number, bossId: string | null): string {
   if (blindIndex === 0) return 'Small Blind';
   if (blindIndex === 1) return 'Big Blind';
@@ -65,26 +71,25 @@ export function initRound(runState: RunState): void {
     if (vid === 'wasteful' || vid === 'recyclomancy') runState.discardsRemaining += 1;
   }
 
-  // Apply joker modifications
+  // Apply joker modifications. NOTE: handSize is a persistent stat adjusted
+  // once in each joker's onBuy/onSell — do NOT touch it here; initRound runs
+  // every round, so any change here accumulates for the rest of the run.
   for (const j of runState.jokers) {
     if (j.id === 'j_merry_andy') runState.discardsRemaining += 3;
-    if (j.id === 'j_troubadour') { runState.handsRemaining -= 1; runState.handSize += 2; }
-    if (j.id === 'j_stuntman') runState.handSize -= 2;
+    if (j.id === 'j_troubadour') runState.handsRemaining -= 1;
   }
 
   runState.handsRemaining = Math.max(1, runState.handsRemaining);
   runState.discardsRemaining = Math.max(0, runState.discardsRemaining);
 
-  // The Water boss blind: 0 discards
-  if (runState.activeBlindId === 'boss_water') runState.discardsRemaining = 0;
-  // The Needle: 1 hand
-  if (runState.activeBlindId === 'boss_needle') runState.handsRemaining = 1;
-  // The Manacle: -1 hand size
-  if (runState.activeBlindId === 'boss_manacle') runState.handSize = Math.max(1, runState.handSize - 1);
+  // Boss effects (0 discards, 1 hand, -1 hand size, …) are applied by each
+  // boss's activateEffect via activateBlind(), which startBlind calls right
+  // after initRound — no per-boss special cases here.
 
   runState.bossBlindHandsPlayed = 0;
   runState.chipsScored = 0;
   runState.playedThisRound = [];
   runState.pendingPlanetCards = [];
   runState.mostPlayedHand = null;
+  runState.nextHandBonus = undefined;
 }

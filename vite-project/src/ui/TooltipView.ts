@@ -11,6 +11,7 @@ export function showTooltip(
   y: number,
   title: string,
   body: string,
+  depth: number = DEPTH_TOOLTIP,
 ): void {
   hideTooltip();
 
@@ -54,7 +55,7 @@ export function showTooltip(
   if (cy < cam.scrollY) cy = y + 8;
 
   container.setPosition(cx, cy);
-  container.setDepth(DEPTH_TOOLTIP);
+  container.setDepth(depth);
 
   activeTooltip = container;
 }

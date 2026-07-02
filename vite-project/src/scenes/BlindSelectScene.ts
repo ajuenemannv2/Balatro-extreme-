@@ -278,7 +278,7 @@ export class BlindSelectScene extends Phaser.Scene {
       const playBtn = new Button(
         this,
         cx,
-        cardY + cardH - 52,
+        cardY + cardH - 68,
         180,
         48,
         '▶  Play!',
@@ -306,9 +306,9 @@ export class BlindSelectScene extends Phaser.Scene {
         const skipBtn = new Button(
           this,
           cx,
-          cardY + cardH - 4,
+          cardY + cardH - 22,
           130,
-          32,
+          28,
           'Skip →',
           () => {
             const rng = getRNG(rs);

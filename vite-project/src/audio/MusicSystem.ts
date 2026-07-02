@@ -31,6 +31,7 @@ export class MusicSystem {
   private muted = false;
   private transitionTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingTrackId: TrackId | null = null;
+  private pendingEndFn: (() => void) | null = null;
 
   // No-op: Howler auto-unlocks on first user gesture
   async start(): Promise<void> {}
@@ -48,19 +49,18 @@ export class MusicSystem {
     return this.howls.get(src)!;
   }
 
-  // Returns milliseconds until the current loop reaches its natural end point.
-  // Returns 0 if duration is not yet known or nothing is playing.
-  private _msUntilLoopEnd(): number {
-    if (!this.activeSrc || this.activeSoundId === null) return 0;
-    const howl = this.howls.get(this.activeSrc);
-    if (!howl) return 0;
-    const dur = howl.duration();
-    if (!dur || dur <= 0 || !isFinite(dur)) return 0;
-    const pos = howl.seek(this.activeSoundId);
-    if (typeof pos !== 'number' || !isFinite(pos) || pos < 0) return 0;
-    const remaining = (dur - (pos % dur)) * 1000;
-    // If we're within 300ms of the end, wait for the next full loop instead
-    return remaining < 300 ? remaining + dur * 1000 : remaining;
+  // Remove any scheduled loop-boundary transition (timer + 'end' listener)
+  private _clearPendingTransition(): void {
+    if (this.transitionTimer !== null) {
+      clearTimeout(this.transitionTimer);
+      this.transitionTimer = null;
+    }
+    if (this.pendingEndFn && this.activeSrc) {
+      const howl = this.howls.get(this.activeSrc);
+      howl?.off('end', this.pendingEndFn as never);
+    }
+    this.pendingEndFn = null;
+    this.pendingTrackId = null;
   }
 
   // Actually start playing a new track right now.
@@ -68,15 +68,22 @@ export class MusicSystem {
     const newSrc = TRACK_SRC[id];
     const targetVol = this.muted ? 0 : this.musicVolume * TRACK_VOL[id];
 
+    this._clearPendingTransition();
+
     // Stop old sound (fade out quickly so the loop-end feels clean)
     if (this.activeSoundId !== null && this.activeSrc) {
       const oldHowl = this.howls.get(this.activeSrc)!;
+      const oldSrc = this.activeSrc;
       const oldId = this.activeSoundId;
       const oldVol = this.activeVol;
-      if (this.activeSrc !== newSrc) {
-        // Different file: short fade-out overlap
+      if (oldSrc !== newSrc) {
+        // Different file: short fade-out overlap, then free the decoded
+        // buffer — WebAudio keeps the whole track as raw PCM otherwise
         oldHowl.fade(oldVol, 0, 250, oldId);
-        setTimeout(() => { try { oldHowl.stop(oldId); } catch { /**/ } }, 350);
+        setTimeout(() => {
+          try { oldHowl.stop(oldId); oldHowl.unload(); } catch { /**/ }
+          this.howls.delete(oldSrc);
+        }, 350);
       } else {
         // Same file (menu ↔ shop): just stop silently, no need to restart
         try { oldHowl.stop(oldId); } catch { /**/ }
@@ -86,7 +93,6 @@ export class MusicSystem {
     this.activeSoundId = null;
     this.activeSrc = null;
     this.activeVol = 0;
-    this.pendingTrackId = null;
 
     // Start new track with fade-in
     const howl = this._howl(newSrc);
@@ -101,18 +107,13 @@ export class MusicSystem {
   }
 
   async switchTrack(id: TrackId): Promise<void> {
-    // Cancel any previously scheduled transition
-    if (this.transitionTimer !== null) {
-      clearTimeout(this.transitionTimer);
-      this.transitionTimer = null;
-    }
+    this._clearPendingTransition();
 
     const newSrc = TRACK_SRC[id];
 
     // Same audio file already playing (e.g. menu ↔ shop both use menu.m4a)
     if (this.activeSrc === newSrc && this.activeSoundId !== null) {
       this.currentTrackId = id;
-      this.pendingTrackId = null;
       return;
     }
 
@@ -122,32 +123,23 @@ export class MusicSystem {
       return;
     }
 
-    // Something is playing — schedule the switch at the next loop boundary
-    const msLeft = this._msUntilLoopEnd();
-
-    if (msLeft <= 0) {
-      // Duration not yet known (file still loading) — start immediately
-      this._commitStart(id);
-      return;
-    }
-
-    // Clamp so we never wait more than MAX_WAIT_MS
-    const waitMs = Math.min(msLeft, MAX_WAIT_MS);
+    // Something is playing — switch when the current loop iteration ends.
+    // Howler fires 'end' on every loop of a looping sound, which tracks the
+    // audio clock exactly (a setTimeout drifts and is throttled when the
+    // tab is backgrounded). MAX_WAIT_MS timer is a fallback force-switch.
     this.pendingTrackId = id;
-
-    this.transitionTimer = setTimeout(() => {
-      this.transitionTimer = null;
+    const howl = this.howls.get(this.activeSrc)!;
+    const commit = () => {
       if (this.pendingTrackId) this._commitStart(this.pendingTrackId);
-    }, waitMs - 80); // fire 80ms early to account for timer jitter
+    };
+    this.pendingEndFn = commit;
+    howl.once('end', commit, this.activeSoundId);
+    this.transitionTimer = setTimeout(commit, MAX_WAIT_MS);
   }
 
   // Hard stop — fade out immediately, no loop-boundary wait
   stop(): void {
-    if (this.transitionTimer !== null) {
-      clearTimeout(this.transitionTimer);
-      this.transitionTimer = null;
-    }
-    this.pendingTrackId = null;
+    this._clearPendingTransition();
 
     if (this.activeSoundId !== null && this.activeSrc) {
       const howl = this.howls.get(this.activeSrc);

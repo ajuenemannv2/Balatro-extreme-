@@ -621,9 +621,9 @@ export class MiniGameScene extends Phaser.Scene {
 
     // Outcome table (displayed as reward hints)
     const OUTCOMES: { label: string; color: string; weight: number }[] = [
-      { label: '✕  Nothing',         color: '#888888', weight: 22 },
-      { label: 'M  +20 Mult',        color: '#ff6666', weight: 20 },
-      { label: '★  ×3 Mult',         color: '#ff3333', weight: 10 },
+      { label: '✕  Nothing',              color: '#888888', weight: 22 },
+      { label: 'M  +500 Chips next hand', color: '#ff6666', weight: 20 },
+      { label: '★  ×3 Score next hand',   color: '#ff3333', weight: 10 },
       { label: '$  +$8',             color: '#f5a623', weight: 15 },
       { label: 'T  Tarot Card',      color: '#cc88ff', weight: 10 },
       { label: 'P  Planet Card',     color: '#4488ff', weight: 8  },
@@ -706,7 +706,7 @@ export class MiniGameScene extends Phaser.Scene {
       pullBtn.strokeRoundedRect(cx - 80, reelY + reelH + 20, 160, 52, 8);
     };
     drawPull(false);
-    const pullTxt = this.add.text(cx, reelY + reelH + 46, 'PULL  ($5)', {
+    const pullTxt = this.add.text(cx, reelY + reelH + 46, `PULL  ($${slotCost})`, {
       fontFamily: FONT, fontSize: '18px', color: '#ffffff',
     }).setOrigin(0.5, 0.5).setDepth(DEPTH.modal + 3);
 
